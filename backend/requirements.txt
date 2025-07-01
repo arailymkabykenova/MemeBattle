@@ -19,8 +19,8 @@ websockets
 # HTTP клиент
 httpx
 
-# Firebase Admin SDK
-firebase-admin
+# Game Center аутентификация (используем cryptography для верификации подписей)
+# cryptography уже включена в другие зависимости
 
 # JWT токены
 python-jose[cryptography]
@@ -36,4 +36,16 @@ azure-storage-blob
 openai  # Для Azure OpenAI тоже используется библиотека openai
 
 # Дополнительная совместимость
-asyncpg 
+asyncpg
+
+# Логирование и мониторинг
+structlog
+
+# Redis для кэширования и Celery
+redis
+
+# Celery для фоновых задач
+celery
+
+# Docker и deployment
+gunicorn 

@@ -69,9 +69,14 @@ class RoomService:
         if room_data.generate_code or not room_data.is_public:
             room_code = await self._generate_unique_room_code()
         
-        # Получаем пользователя для age_group
-        user = await self.db.get(User, creator_id)
-        age_group = await self._determine_age_group(user) if user else None
+        # 🎯 НОВАЯ ЛОГИКА: age_group зависит от типа комнаты
+        if room_data.is_public:
+            # Для публичных комнат определяем age_group по создателю
+            user = await self.db.get(User, creator_id)
+            age_group = await self._determine_age_group(user) if user else "young_adults"
+        else:
+            # Для приватных комнат устанавливаем "mixed" - без возрастных ограничений
+            age_group = "mixed"
         
         # Создаем комнату
         room = Room(
@@ -202,7 +207,8 @@ class RoomService:
         user = await self.db.get(User, user_id)
         age_group = await self._determine_age_group(user) if user else None
         
-        # Ищем подходящие публичные комнаты с нужной age_group
+        # 🎯 СТРОГИЙ ПОИСК: ищем подходящие публичные комнаты ТОЛЬКО с нужной age_group
+        # Исключаем "mixed" комнаты, чтобы Quick Match не попадал в приватные комнаты
         query = select(Room, func.count(RoomParticipant.id).label('current_players')).join(
             RoomParticipant, Room.id == RoomParticipant.room_id
         ).where(
@@ -210,7 +216,8 @@ class RoomService:
                 Room.status == RoomStatus.WAITING,
                 Room.is_public == True,
                 RoomParticipant.status == ParticipantStatus.ACTIVE,
-                Room.age_group == age_group
+                Room.age_group == age_group,  # Строгое совпадение
+                Room.age_group != "mixed"     # Исключаем mixed комнаты
             )
         ).group_by(Room.id)
         
@@ -331,8 +338,8 @@ class RoomService:
         
         # Проверяем количество игроков
         active_players = await self._get_active_players_count(room_id)
-        if active_players < 2:
-            raise ValidationError("Для начала игры нужно минимум 2 игрока")
+        if active_players < 3:
+            raise ValidationError("Для начала игры нужно минимум 3 игрока")
         
         # Меняем статус комнаты
         room.status = RoomStatus.PLAYING
@@ -431,7 +438,7 @@ class RoomService:
             current_players=len(participants),
             participants=participants,
             creator_nickname=creator_nickname,
-            can_start_game=(len(participants) >= 2 and room.status == RoomStatus.WAITING)
+            can_start_game=(len(participants) >= 3 and room.status == RoomStatus.WAITING)
         )
     
     async def get_available_rooms(self, limit: int = 20) -> List[RoomResponse]:
@@ -519,8 +526,11 @@ class RoomService:
     
     async def _join_room_internal(self, room_id: int, user_id: int) -> RoomDetailResponse:
         """
-        Внутренний метод присоединения к комнате (без проверки is_public).
+        Внутренний метод присоединения к комнате (без проверки is_public и age_group).
         Используется для присоединения по коду и обычного присоединения.
+        
+        🎯 ВАЖНО: Этот метод НЕ проверяет age_group, что позволяет игрокам любого 
+        возраста присоединяться к приватным комнатам по коду.
         
         Args:
             room_id: ID комнаты
@@ -553,6 +563,9 @@ class RoomService:
         current_players = await self._get_active_players_count(room_id)
         if current_players >= room.max_players:
             raise ValidationError("Комната заполнена")
+        
+        # 🎯 УДАЛЕНА ПРОВЕРКА age_group - теперь игроки любого возраста могут 
+        # присоединяться к приватным комнатам по коду
         
         # Добавляем участника
         participant = RoomParticipant(

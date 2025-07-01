@@ -162,16 +162,16 @@ async def get_user(
         raise create_http_exception(e)
 
 
-@router.get("/firebase/{firebase_uid}", response_model=UserResponse)
-async def get_user_by_firebase_uid(
-    firebase_uid: str, 
+@router.get("/game-center/{player_id}", response_model=UserResponse)
+async def get_user_by_game_center_id(
+    player_id: str, 
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Получает пользователя по Firebase UID.
+    Получает пользователя по Game Center Player ID.
     
     Args:
-        firebase_uid: Firebase UID
+        player_id: Game Center Player ID
         db: Сессия базы данных
         
     Returns:
@@ -179,7 +179,7 @@ async def get_user_by_firebase_uid(
     """
     try:
         user_service = UserService(db)
-        user = await user_service.get_user_by_firebase_uid(firebase_uid)
+        user = await user_service.get_user_by_game_center_id(player_id)
         if not user:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
         return user

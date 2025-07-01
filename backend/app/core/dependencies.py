@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from .database import get_db
+from .redis import get_redis_client, RedisClient
 from ..services.auth_service import AuthService
+from ..services.game_service import GameService
 from ..schemas.user import UserResponse
 from ..utils.exceptions import AuthenticationError, UserNotFoundError
 
@@ -125,4 +127,21 @@ async def get_user_from_token(token: str, db: AsyncSession) -> Optional[UserResp
     """
     auth_service = AuthService(db)
     user = await auth_service.get_current_user(token)
-    return user 
+    return user
+
+
+async def get_game_service(
+    db: AsyncSession = Depends(get_db),
+    redis_client: RedisClient = Depends(get_redis_client)
+) -> GameService:
+    """
+    Получает экземпляр GameService с Redis клиентом.
+    
+    Args:
+        db: Сессия базы данных
+        redis_client: Redis клиент
+        
+    Returns:
+        GameService: Экземпляр игрового сервиса
+    """
+    return GameService(db, redis_client) 

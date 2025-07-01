@@ -7,8 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .core.config import settings
 from .core.database import init_database
+from .core.redis import init_redis, close_redis, get_redis_client
 from .routers import users, auth, cards, rooms, games
 from .websocket import routes as websocket_routes
+from .websocket.connection_manager import init_connection_manager
 
 
 def create_application() -> FastAPI:
@@ -56,7 +58,21 @@ async def startup_event():
     """События при запуске приложения"""
     print("🚀 Запуск Meme Card Game API...")
     await init_database()
+    await init_redis()
+    
+    # Инициализируем ConnectionManager с Redis клиентом
+    redis_client = get_redis_client()
+    await init_connection_manager(redis_client)
+    
     print("✅ Приложение готово к работе!")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """События при остановке приложения"""
+    print("🛑 Остановка Meme Card Game API...")
+    await close_redis()
+    print("✅ Приложение остановлено!")
 
 
 @app.get("/")
@@ -91,11 +107,17 @@ async def health_check():
     Returns:
         dict: Статус здоровья
     """
+    from .core.redis import redis_client
+    
+    # Проверяем Redis
+    redis_status = "connected" if redis_client else "disconnected"
+    
     return {
         "status": "healthy",
         "app_name": settings.app_name,
         "version": settings.version,
         "database": "connected",  # TODO: добавить реальную проверку DB
+        "redis": redis_status,
         "azure": "configured"     # TODO: добавить проверку Azure
     }
 
@@ -117,7 +139,7 @@ async def models_info():
         "models": {
             "users": {
                 "table_name": User.__tablename__,
-                "fields": ["id", "firebase_uid", "nickname", "birth_date", "gender", "rating", "created_at"],
+                "fields": ["id", "game_center_player_id", "nickname", "birth_date", "gender", "rating", "created_at"],
                 "gender_options": [g.value for g in Gender]
             },
             "cards": {

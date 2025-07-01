@@ -23,15 +23,16 @@ class Settings(BaseModel):
     # База данных (пока заглушка)
     database_url: Optional[str] = None
     
-    # Redis (пока заглушка)
+    # Redis настройки
     redis_url: Optional[str] = None
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: Optional[str] = None
     
-    # Firebase (пока заглушка)
-    firebase_project_id: Optional[str] = None
-    firebase_private_key: Optional[str] = None
-    firebase_client_email: Optional[str] = None
-    firebase_service_account_path: Optional[str] = None
-    firebase_service_account_json: Optional[str] = None
+    # Game Center аутентификация
+    # Настройки для верификации подписей Apple (если потребуется)
+    apple_team_id: Optional[str] = None
     
     # Azure Storage
     azure_storage_connection_string: Optional[str] = None
@@ -73,11 +74,11 @@ def load_settings() -> Settings:
         version=os.getenv("VERSION", "1.0.0"),
         database_url=database_url,
         redis_url=os.getenv("REDIS_URL"),
-        firebase_project_id=os.getenv("FIREBASE_PROJECT_ID"),
-        firebase_private_key=os.getenv("FIREBASE_PRIVATE_KEY"),
-        firebase_client_email=os.getenv("FIREBASE_CLIENT_EMAIL"),
-        firebase_service_account_path=os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"),
-        firebase_service_account_json=os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON"),
+        redis_host=os.getenv("REDIS_HOST", "localhost"),
+        redis_port=int(os.getenv("REDIS_PORT", "6379")),
+        redis_db=int(os.getenv("REDIS_DB", "0")),
+        redis_password=os.getenv("REDIS_PASSWORD"),
+        apple_team_id=os.getenv("APPLE_TEAM_ID"),
         azure_storage_connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
         azure_container_name=os.getenv("AZURE_CONTAINER_NAME"),
         azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),

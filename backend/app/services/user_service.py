@@ -42,10 +42,11 @@ class UserService:
         if existing_user:
             raise DuplicateNicknameError(f"Никнейм '{user_data.nickname}' уже занят")
         
-        # Проверяем уникальность Firebase UID
-        existing_firebase_user = await self.user_repo.get_by_firebase_uid(user_data.firebase_uid)
-        if existing_firebase_user:
-            raise ValidationError("Пользователь с таким Firebase UID уже существует")
+        # Проверяем уникальность Game Center Player ID
+        if hasattr(user_data, 'game_center_player_id') and user_data.game_center_player_id:
+            existing_gc_user = await self.user_repo.get_by_game_center_id(user_data.game_center_player_id)
+            if existing_gc_user:
+                raise ValidationError("Пользователь с таким Game Center Player ID уже существует")
         
         # Создаем пользователя
         user = await self.user_repo.create(user_data)

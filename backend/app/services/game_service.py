@@ -24,17 +24,20 @@ from ..schemas.game import (
 from ..services.card_service import CardService
 from ..services.player_manager import PlayerManager
 from ..services.ai_service import AIService
+from ..core.redis import RedisClient
+from ..tasks.ai_tasks import generate_situation_for_round_task
 from ..utils.exceptions import ValidationError, NotFoundError, PermissionError
 
 
 class GameService:
     """Сервис для управления игровым процессом"""
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, redis_client: Optional[RedisClient] = None):
         self.db = db
         self.card_service = CardService(db)
         self.player_manager = PlayerManager(db)
         self.ai_service = AIService(db)
+        self.redis_client = redis_client
         
         # Таймауты для разных фаз игры
         self.CARD_SELECTION_TIMEOUT = 50  # Начальное время на выбор карт
@@ -53,22 +56,79 @@ class GameService:
         )
         return result.scalar()
     
+    async def get_game_state(self, game_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получает состояние игры с кэшированием.
+        
+        Args:
+            game_id: ID игры
+            
+        Returns:
+            Optional[Dict]: Состояние игры или None
+        """
+        # Сначала пытаемся получить из кэша
+        if self.redis_client:
+            cached_state = await self.redis_client.get_game_state(game_id)
+            if cached_state:
+                return cached_state
+        
+        # Если в кэше нет, получаем из БД
+        game = await self._get_game_or_404(game_id)
+        
+        # Получаем текущий раунд
+        current_round = None
+        if game.current_round > 0:
+            round_result = await self.db.execute(
+                select(GameRound).where(
+                    and_(
+                        GameRound.game_id == game_id,
+                        GameRound.round_number == game.current_round
+                    )
+                )
+            )
+            current_round = round_result.scalar()
+        
+        # Получаем активных игроков
+        active_players = await self.player_manager.get_active_players(game.room_id)
+        
+        # Формируем состояние игры
+        game_state = {
+            "game_id": game.id,
+            "room_id": game.room_id,
+            "status": game.status.value,
+            "current_round": game.current_round,
+            "total_rounds": 7,
+            "active_players_count": len(active_players),
+            "current_round_data": {
+                "round_id": current_round.id if current_round else None,
+                "situation_text": current_round.situation_text if current_round else None,
+                "duration_seconds": current_round.duration_seconds if current_round else None,
+                "started_at": current_round.started_at.isoformat() if current_round else None,
+                "selection_deadline": current_round.selection_deadline.isoformat() if current_round else None,
+                "voting_deadline": current_round.voting_deadline.isoformat() if current_round else None
+            } if current_round else None,
+            "active_players": active_players,
+            "last_updated": datetime.utcnow().isoformat()
+        }
+        
+        # Сохраняем в кэш на 5 минут
+        if self.redis_client:
+            await self.redis_client.cache_game_state(game_id, game_state, expire=300)
+        
+        return game_state
+    
     async def start_round(self, game_id: int, situation_text: Optional[str] = None) -> GameRoundResponse:
         """
         Начинает новый раунд игры с установкой таймаутов.
         
         Args:
             game_id: ID игры
-            situation_text: Текст ситуационной карточки (если None, генерируется через AI)
+            situation_text: Текст ситуационной карточки (если None, генерируется через Celery)
             
         Returns:
             GameRoundResponse: Созданный раунд
         """
         game = await self._get_game_or_404(game_id)
-        
-        # Генерируем ситуацию через AI если не передана вручную
-        if situation_text is None:
-            situation_text = await self._generate_situation_for_round(game)
         
         # Проверяем что игра может начать раунд
         if game.status not in [GameStatus.STARTING, GameStatus.ROUND_RESULTS]:
@@ -79,9 +139,9 @@ class GameService:
         
         # Проверяем что достаточно игроков для продолжения
         active_players = await self.player_manager.get_active_players(game.room_id)
-        if len(active_players) < 2:
+        if len(active_players) < 3:
             # Автоматически завершаем игру
-            return await self.end_game(game_id, reason="Недостаточно игроков для продолжения")
+            return await self.end_game(game_id, reason="Недостаточно игроков для продолжения (минимум 3)")
         
         # Вычисляем длительность раунда: 50 -> 45 -> 40 -> 35 -> 30 -> 30 -> 30...
         if game.current_round <= 5:
@@ -92,6 +152,37 @@ class GameService:
         
         # ИСПРАВЛЕНО: Увеличиваем номер раунда перед созданием
         next_round_number = game.current_round + 1
+        
+        # Если ситуация не передана, используем placeholder и запускаем Celery задачу
+        if situation_text is None:
+            # Получаем комнату для определения age_group и языка
+            room_result = await self.db.execute(
+                select(Room).where(Room.id == game.room_id)
+            )
+            room = room_result.scalar()
+            
+            # Используем placeholder ситуацию
+            situation_text = f"Генерация ситуации для раунда {next_round_number}..."
+            
+            # Запускаем фоновую задачу Celery для генерации ситуации
+            generate_situation_for_round_task.delay(
+                game_id=game_id,
+                room_id=game.room_id,
+                round_number=next_round_number,
+                age_group=room.age_group or "adults",
+                language="ru"  # Можно добавить в Room поле language
+            )
+            
+            # Публикуем событие о начале генерации ситуации
+            if self.redis_client:
+                await self.redis_client.publish_game_event(
+                    room_id=game.room_id,
+                    event_type="situation_generating",
+                    event_data={
+                        "game_id": game_id,
+                        "round_number": next_round_number
+                    }
+                )
         
         # Создаем раунд с таймаутами
         game_round = GameRound(
@@ -112,9 +203,26 @@ class GameService:
         await self.db.commit()
         await self.db.refresh(game_round)
         
+        # Инвалидируем кэш состояния игры
+        if self.redis_client:
+            await self.redis_client.delete(f"game_state:{game_id}")
+        
+        # Публикуем событие о начале раунда
+        if self.redis_client:
+            await self.redis_client.publish_game_event(
+                room_id=game.room_id,
+                event_type="round_started",
+                event_data={
+                    "game_id": game_id,
+                    "round_id": game_round.id,
+                    "round_number": next_round_number,
+                    "situation_text": situation_text,
+                    "duration_seconds": duration
+                }
+            )
+        
         # Запускаем фоновую задачу для обработки таймаута
-        # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТИРОВАНИЯ:
-        # asyncio.create_task(self._handle_selection_timeout(game_round.id))
+        asyncio.create_task(self._handle_selection_timeout(game_round.id))
         
         return GameRoundResponse(
             id=game_round.id,
@@ -148,14 +256,12 @@ class GameService:
         game_round = await self._get_round_or_404(round_id)
         game = await self._get_game_or_404(game_round.game_id)
         
-        # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТИРОВАНИЯ:
-        # if game.status != GameStatus.CARD_SELECTION:
-        #     raise ValidationError("Время выбора карт истекло")
+        if game.status != GameStatus.CARD_SELECTION:
+            raise ValidationError("Время выбора карт истекло")
         
         # Проверяем дедлайн
-        # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТИРОВАНИЯ:
-        # if datetime.utcnow() > game_round.selection_deadline:
-        #     raise ValidationError("Время на выбор карты истекло")
+        if datetime.utcnow() > game_round.selection_deadline:
+            raise ValidationError("Время на выбор карты истекло")
         
         # Проверяем что игрок участвует в игре
         await self._validate_player_in_game(game.room_id, user_id)
@@ -199,6 +305,24 @@ class GameService:
         await self.db.commit()
         await self.db.refresh(player_choice)
         
+        # Инвалидируем кэш состояния игры
+        if self.redis_client:
+            await self.redis_client.delete(f"game_state:{game.id}")
+        
+        # Публикуем событие о выборе карты
+        if self.redis_client:
+            await self.redis_client.publish_game_event(
+                room_id=game.room_id,
+                event_type="player_choice_submitted",
+                event_data={
+                    "game_id": game.id,
+                    "round_id": round_id,
+                    "user_id": user_id,
+                    "card_type": choice_data.card_type,
+                    "card_number": choice_data.card_number
+                }
+            )
+        
         # Получаем никнейм игрока
         user_result = await self.db.execute(
             select(User.nickname).where(User.id == user_id)
@@ -241,16 +365,32 @@ class GameService:
         )
         choices = choices_result.scalars().all()
         
-        if len(choices) < 2:
-            raise ValidationError("Для голосования нужно минимум 2 выбора")
+        if len(choices) < 3:
+            raise ValidationError("Для голосования нужно минимум 3 выбора")
         
         # Обновляем статус игры
         game.status = GameStatus.VOTING
         await self.db.commit()
         
+        # Инвалидируем кэш состояния игры
+        if self.redis_client:
+            await self.redis_client.delete(f"game_state:{game.id}")
+        
+        # Публикуем событие о начале голосования
+        if self.redis_client:
+            await self.redis_client.publish_game_event(
+                room_id=game.room_id,
+                event_type="voting_started",
+                event_data={
+                    "game_id": game.id,
+                    "round_id": round_id,
+                    "voting_deadline": game_round.voting_deadline.isoformat(),
+                    "total_choices": len(choices)
+                }
+            )
+        
         # Запускаем фоновую задачу для обработки таймаута голосования
-        # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТИРОВАНИЯ:
-        # asyncio.create_task(self._handle_voting_timeout(round_id))
+        asyncio.create_task(self._handle_voting_timeout(round_id))
         
         return {
             "success": True,
@@ -281,14 +421,12 @@ class GameService:
         game_round = await self._get_round_or_404(round_id)
         game = await self._get_game_or_404(game_round.game_id)
         
-        # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТИРОВАНИЯ:
-        # if game.status != GameStatus.VOTING:
-        #     raise ValidationError("Время голосования истекло")
+        if game.status != GameStatus.VOTING:
+            raise ValidationError("Время голосования истекло")
         
         # Проверяем дедлайн
-        # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ТЕСТИРОВАНИЯ:
-        # if datetime.utcnow() > game_round.voting_deadline:
-        #     raise ValidationError("Время на голосование истекло")
+        if datetime.utcnow() > game_round.voting_deadline:
+            raise ValidationError("Время на голосование истекло")
         
         # Проверяем что игрок участвует в игре
         await self._validate_player_in_game(game.room_id, user_id)
@@ -329,6 +467,23 @@ class GameService:
         self.db.add(vote)
         await self.db.commit()
         await self.db.refresh(vote)
+        
+        # Инвалидируем кэш состояния игры
+        if self.redis_client:
+            await self.redis_client.delete(f"game_state:{game.id}")
+        
+        # Публикуем событие о голосе
+        if self.redis_client:
+            await self.redis_client.publish_game_event(
+                room_id=game.room_id,
+                event_type="vote_submitted",
+                event_data={
+                    "game_id": game.id,
+                    "round_id": round_id,
+                    "voter_id": user_id,
+                    "choice_id": vote_data.choice_id
+                }
+            )
         
         # Получаем никнейм голосующего
         user_result = await self.db.execute(
@@ -461,6 +616,27 @@ class GameService:
             await self._award_round_points(winner_choice.user_id, winner_choice.user_nickname)
         
         await self.db.commit()
+        
+        # Инвалидируем кэш состояния игры
+        if self.redis_client:
+            await self.redis_client.delete(f"game_state:{game.id}")
+        
+        # Публикуем событие о результатах раунда
+        if self.redis_client:
+            await self.redis_client.publish_game_event(
+                room_id=game.room_id,
+                event_type="round_results_calculated",
+                event_data={
+                    "game_id": game.id,
+                    "round_id": round_id,
+                    "round_number": game_round.round_number,
+                    "winner_user_id": winner_choice.user_id if winner_choice else None,
+                    "winner_nickname": winner_choice.user_nickname if winner_choice else None,
+                    "max_votes": max_votes,
+                    "total_choices": len(choices_data),
+                    "next_round_starts_in": self.RESULTS_DISPLAY_TIME
+                }
+            )
         
         print(f"🎯 Раунд {game_round.round_number} завершен. Победитель: {winner_choice.user_nickname if winner_choice else 'Никто'} ({max_votes} голосов)")
         
@@ -640,6 +816,25 @@ class GameService:
             room.status = RoomStatus.FINISHED
         
         await self.db.commit()
+        
+        # Инвалидируем кэш состояния игры
+        if self.redis_client:
+            await self.redis_client.delete(f"game_state:{game_id}")
+        
+        # Публикуем событие о завершении игры
+        if self.redis_client:
+            await self.redis_client.publish_game_event(
+                room_id=game.room_id,
+                event_type="game_ended",
+                event_data={
+                    "game_id": game_id,
+                    "winner_id": winner_id,
+                    "winner_nickname": leaderboard[0]["nickname"] if leaderboard else None,
+                    "total_rounds": game.current_round,
+                    "leaderboard": leaderboard,
+                    "reason": reason
+                }
+            )
         
         # ИСПРАВЛЕНО: Награждаем победителя игры (не раунда) стандартной картой
         if winner_id and leaderboard and leaderboard[0]["round_wins"] > 0:
@@ -885,16 +1080,16 @@ class GameService:
                         player["user_id"], game.room_id, "card_selection"
                     )
             
-            # Принудительно начинаем голосование если есть хотя бы 2 выбора
+            # Принудительно начинаем голосование если есть хотя бы 3 выбора
             choices_count = await self.db.execute(
                 select(func.count(PlayerChoice.id)).where(PlayerChoice.round_id == round_id)
             )
             
-            if choices_count.scalar() >= 2:
+            if choices_count.scalar() >= 3:
                 await self.start_voting(round_id)
             else:
                 # Недостаточно выборов - завершаем игру
-                await self.end_game(game_round.game_id, reason="Недостаточно игроков выбрали карты")
+                await self.end_game(game_round.game_id, reason="Недостаточно игроков выбрали карты (минимум 3)")
                 
         except Exception as e:
             print(f"Ошибка в обработке таймаута выбора карт: {e}")
@@ -1006,8 +1201,8 @@ class GameService:
     async def _schedule_next_round(self, game_id: int, current_round: int):
         """Планирует следующий раунд или завершение игры"""
         try:
-            # ВРЕМЕННО ОТКЛЮЧЕНО для тестирования - сразу переходим к следующему раунду
-            # await asyncio.sleep(self.RESULTS_DISPLAY_TIME)
+            # Ждем время отображения результатов
+            await asyncio.sleep(self.RESULTS_DISPLAY_TIME)
             
             # Проверяем текущее состояние игры
             game = await self._get_game_or_404(game_id)

@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .connection_manager import connection_manager
+from .connection_manager import get_connection_manager
 from .game_handler import GameEventHandler
 from ..core.database import get_db
 from ..core.dependencies import get_user_from_token
@@ -55,8 +55,15 @@ async def websocket_endpoint(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication failed")
         return
     
+    # Получаем ConnectionManager
+    connection_manager = get_connection_manager()
+    
     # Подключаем пользователя с синхронизацией состояния из БД
     await connection_manager.connect(websocket, user, room_id, db)
+    
+    # Подписываемся на Redis события для комнаты, если пользователь в комнате
+    if room_id:
+        await connection_manager.subscribe_to_room_events(room_id)
     
     # Создаем обработчик игровых событий
     game_handler = GameEventHandler(db)
@@ -102,6 +109,7 @@ async def websocket_endpoint(
         logger.error(f"WebSocket error for user {user.id}: {e}")
     finally:
         # Отключаем пользователя
+        connection_manager = get_connection_manager()
         await connection_manager.disconnect(user.id)
 
 
@@ -116,6 +124,7 @@ async def get_websocket_stats():
     - Количестве активных игр
     - Распределении пользователей по комнатам/играм
     """
+    connection_manager = get_connection_manager()
     return connection_manager.get_stats()
 
 
@@ -135,6 +144,7 @@ async def broadcast_to_room(
     """
     message["timestamp"] = datetime.utcnow().isoformat()
     
+    connection_manager = get_connection_manager()
     await connection_manager.broadcast_to_room(message, room_id)
     
     return {

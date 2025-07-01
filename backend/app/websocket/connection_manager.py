@@ -3,7 +3,7 @@ WebSocket Connection Manager.
 Управляет соединениями игроков, комнатами и отправкой сообщений.
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Callable, Any
 import json
 import asyncio
 from datetime import datetime
@@ -11,6 +11,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 import logging
 
 from ..models.user import User
+from ..core.redis import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 class ConnectionManager:
     """Менеджер WebSocket соединений"""
     
-    def __init__(self):
+    def __init__(self, redis_client: Optional[RedisClient] = None):
         # Активные соединения: {user_id: WebSocket}
         self.active_connections: Dict[int, WebSocket] = {}
         
@@ -33,6 +34,12 @@ class ConnectionManager:
         
         # Маппинг пользователя к игре: {user_id: game_id}  
         self.user_game: Dict[int, int] = {}
+        
+        # Redis клиент для подписки на события
+        self.redis_client = redis_client
+        
+        # Обработчики Redis событий для комнат: {room_id: callback}
+        self.redis_event_handlers: Dict[int, Callable] = {}
     
     async def connect(self, websocket: WebSocket, user: User, room_id: Optional[int] = None, db_session = None):
         """
@@ -304,7 +311,90 @@ class ConnectionManager:
             "rooms_with_users": {room_id: len(users) for room_id, users in self.room_users.items()},
             "games_with_users": {game_id: len(users) for game_id, users in self.game_users.items()}
         }
+    
+    async def subscribe_to_room_events(self, room_id: int):
+        """
+        Подписывается на Redis события для комнаты.
+        
+        Args:
+            room_id: ID комнаты
+        """
+        if not self.redis_client or room_id in self.redis_event_handlers:
+            return
+        
+        # Создаем обработчик событий для комнаты
+        async def handle_redis_event(event_data: dict):
+            """Обрабатывает Redis события для комнаты"""
+            try:
+                event_type = event_data.get("event_type")
+                event_data_content = event_data.get("event_data", {})
+                
+                # Формируем WebSocket сообщение в зависимости от типа события
+                ws_message = {
+                    "type": event_type,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    **event_data_content
+                }
+                
+                # Отправляем сообщение всем пользователям в комнате
+                await self.broadcast_to_room(ws_message, room_id)
+                
+                logger.info(f"Redis event '{event_type}' broadcasted to room {room_id}")
+                
+            except Exception as e:
+                logger.error(f"Error handling Redis event for room {room_id}: {e}")
+        
+        # Сохраняем обработчик
+        self.redis_event_handlers[room_id] = handle_redis_event
+        
+        # Подписываемся на Redis события
+        await self.redis_client.subscribe_to_room_events(room_id, handle_redis_event)
+        
+        logger.info(f"Subscribed to Redis events for room {room_id}")
+    
+    async def unsubscribe_from_room_events(self, room_id: int):
+        """
+        Отписывается от Redis событий для комнаты.
+        
+        Args:
+            room_id: ID комнаты
+        """
+        if room_id in self.redis_event_handlers:
+            # В будущем можно добавить отписку от Redis канала
+            del self.redis_event_handlers[room_id]
+            logger.info(f"Unsubscribed from Redis events for room {room_id}")
+    
+    async def handle_redis_event(self, event_data: dict):
+        """
+        Обрабатывает входящие Redis события.
+        
+        Args:
+            event_data: Данные события из Redis
+        """
+        try:
+            room_id = event_data.get("room_id")
+            if not room_id or room_id not in self.redis_event_handlers:
+                return
+            
+            # Вызываем обработчик для комнаты
+            handler = self.redis_event_handlers[room_id]
+            await handler(event_data)
+            
+        except Exception as e:
+            logger.error(f"Error handling Redis event: {e}")
 
 
-# Глобальный экземпляр менеджера
-connection_manager = ConnectionManager() 
+# Глобальный экземпляр менеджера (будет инициализирован с Redis в main.py)
+connection_manager: Optional[ConnectionManager] = None
+
+def get_connection_manager() -> ConnectionManager:
+    """Получает глобальный экземпляр ConnectionManager"""
+    if connection_manager is None:
+        raise RuntimeError("ConnectionManager not initialized. Call init_connection_manager() first.")
+    return connection_manager
+
+async def init_connection_manager(redis_client: RedisClient):
+    """Инициализирует глобальный ConnectionManager с Redis клиентом"""
+    global connection_manager
+    connection_manager = ConnectionManager(redis_client)
+    logger.info("ConnectionManager initialized with Redis client") 

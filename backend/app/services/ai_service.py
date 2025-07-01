@@ -211,7 +211,7 @@ class AIService:
         Получает подходящие темы по демографическим данным и языку.
         
         Args:
-            age_group: Возрастная группа
+            age_group: Возрастная группа (или "mixed" для приватных комнат)
             language: Язык контента
             
         Returns:
@@ -225,6 +225,17 @@ class AIService:
             
         age_topics = self.content_templates[lang_code]["age_topics"]
         
+        # 🎯 НОВАЯ ЛОГИКА: для "mixed" комнат собираем темы из ВСЕХ возрастных групп
+        if age_group == "mixed":
+            # Собираем все темы из всех возрастных категорий в один большой пул
+            all_topics = []
+            for group_name, group_topics in age_topics.items():
+                all_topics.extend(group_topics)
+            
+            # Убираем дубликаты и возвращаем весь пул
+            return list(set(all_topics))
+        
+        # Для обычных возрастных групп оставляем старую логику
         # Берем темы для целевой возрастной группы
         topics = set(age_topics.get(age_group, age_topics["young_adults"]))
         
@@ -269,7 +280,7 @@ class AIService:
         
         Args:
             base_situation: Базовая ситуация
-            age_group: Возрастная группа
+            age_group: Возрастная группа (или "mixed" для приватных комнат)
             gender_group: Гендерная группа
             language: Язык контента
             
@@ -279,10 +290,23 @@ class AIService:
         templates = self.content_templates[language]
         prompt_template = templates["customization_prompt"]
         
+        # 🎯 НОВАЯ ЛОГИКА: для "mixed" комнат используем универсальные инструкции
+        if age_group == "mixed":
+            universal_instruction = (
+                "Сделай ситуацию смешной для широкой аудитории разных возрастов. "
+                "Используй универсальный юмор, понятный всем." 
+                if language == "ru" else 
+                "Make the situation funny for a wide audience of different ages. "
+                "Use universal humor that everyone can understand."
+            )
+            age_instruction = universal_instruction
+        else:
+            age_instruction = templates["age_instructions"].get(age_group, "")
+        
         system_prompt = prompt_template.format(
             age_group=age_group,
             gender_group=gender_group,
-            age_instruction=templates["age_instructions"].get(age_group, ""),
+            age_instruction=age_instruction,
             gender_instruction=templates["gender_instructions"].get(gender_group, "")
         )
         
