@@ -1,0 +1,324 @@
+# .cursorrules для iOS Игрового Приложения - Backend
+
+## 🎯 ПРОЕКТ: iOS Мем Карточная Игра (Backend)
+
+### Основные Технологии
+- **FastAPI** - основной web framework
+- **PostgreSQL** - основная база данных
+- **Azure Blob Storage** - хранение карточек-мемов
+- **Redis** - кэширование и сессии
+- **Celery** - фоновые задачи
+- **Firebase Auth** - аутентификация
+- **WebSocket** - реальное время для игровых комнат
+- **Docker** - контейнеризация
+- **Nginx** - reverse proxy
+- **OpenAI API** - генерация ситуационных карточек
+
+## 🏗️ АРХИТЕКТУРНЫЕ ПРИНЦИПЫ
+
+### Модульность и Независимость
+- **КРИТИЧНО**: Каждая логика должна быть максимально независимой
+- При удалении одного модуля, другие должны продолжать работать
+- Используй Dependency Injection для всех зависимостей
+- Создавай отдельные сервисы для каждой бизнес-логики
+- Используй интерфейсы (Protocols) для всех внешних зависимостей
+
+### Структура Проекта
+```
+backend/
+├── app/
+│   ├── __init__.py
+│   ├── main.py                    # FastAPI приложение
+│   ├── core/
+│   │   ├── config.py             # Конфигурация
+│   │   ├── database.py           # База данных
+│   │   ├── redis.py              # Redis подключение
+│   │   ├── security.py           # Безопасность
+│   │   └── dependencies.py       # DI контейнер
+│   ├── models/                   # SQLAlchemy модели
+│   │   ├── user.py
+│   │   ├── card.py
+│   │   ├── game.py
+│   │   └── room.py
+│   ├── schemas/                  # Pydantic схемы
+│   │   ├── user.py
+│   │   ├── card.py
+│   │   ├── game.py
+│   │   └── room.py
+│   ├── services/                 # Бизнес-логика
+│   │   ├── auth_service.py
+│   │   ├── user_service.py
+│   │   ├── card_service.py
+│   │   ├── game_service.py
+│   │   ├── room_service.py
+│   │   ├── ai_service.py
+│   │   └── rating_service.py
+│   ├── repositories/             # Работа с данными
+│   │   ├── user_repository.py
+│   │   ├── card_repository.py
+│   │   ├── game_repository.py
+│   │   └── room_repository.py
+│   ├── routers/                  # API endpoints
+│   │   ├── auth.py
+│   │   ├── users.py
+│   │   ├── cards.py
+│   │   ├── games.py
+│   │   └── rooms.py
+│   ├── websocket/                # WebSocket логика
+│   │   ├── manager.py
+│   │   ├── room_handler.py
+│   │   └── game_handler.py
+│   ├── external/                 # Внешние сервисы
+│   │   ├── firebase_client.py
+│   │   ├── azure_client.py
+│   │   ├── openai_client.py
+│   │   └── redis_client.py
+│   ├── utils/                    # Утилиты
+│   │   ├── exceptions.py
+│   │   ├── logging.py
+│   │   └── validators.py
+│   └── tests/                    # Тесты
+├── requirements.txt
+├── docker-compose.yml
+├── Dockerfile
+└── alembic/                      # Миграции
+```
+
+## 🔧 ПРАВИЛА РАЗРАБОТКИ
+
+### Python Environment
+- **ВСЕГДА** создавай виртуальное окружение: `python3 -m venv venv`
+- **ВСЕГДА** активируй окружение: `source venv/bin/activate`
+- **НИКОГДА** не устанавливай пакеты глобально
+- Используй `requirements.txt` для зависимостей
+
+### Код Стиль
+- Используй **async/await** для всех I/O операций
+- Следуй **PEP 8** стандартам
+- Используй **type hints** везде
+- Максимальная длина строки: 88 символов (Black formatter)
+- Используй **docstrings** для всех функций и классов
+
+### Обработка Ошибок
+- Создавай кастомные исключения для каждого модуля
+- Используй HTTP status codes правильно
+- Всегда логируй ошибки с контекстом
+- Обрабатывай все внешние API ошибки
+
+## 🎮 MVP ФУНКЦИОНАЛ
+
+### 1. Аутентификация (auth_service.py)
+```python
+# Функции для реализации:
+- register_user() - регистрация через Firebase
+- login_user() - вход через Firebase  
+- verify_token() - проверка токена
+- get_current_user() - получение текущего пользователя
+- logout_user() - выход из системы
+```
+
+### 2. Пользователи (user_service.py)
+```python
+# Функции для реализации:
+- create_user_profile() - создание профиля (ник, дата рождения, пол)
+- get_user_profile() - получение профиля
+- update_user_profile() - обновление профиля
+- assign_starter_cards() - выдача 10 рандомных стартовых карт
+- get_user_cards() - получение карт пользователя
+- update_user_rating() - обновление рейтинга
+```
+
+### 3. Карточки (card_service.py)
+```python
+# Функции для реализации:
+- load_starter_cards() - загрузка 100 стартовых карт из Azure
+- load_unique_cards() - загрузка 200 уникальных карт из Azure
+- get_random_starter_cards() - получение рандомных стартовых карт
+- get_cards_for_round() - получение 3 карт для раунда
+- award_card_to_winner() - выдача карты победителю
+- award_unique_card() - выдача уникальной карты за 3 победы подряд
+```
+
+### 4. ИИ Генерация (ai_service.py)
+```python
+# Функции для реализации:
+- generate_situation_card() - генерация ситуационной карточки через OpenAI
+- get_topics_by_demographics() - получение тем по возрасту/полу
+- customize_situation() - кастомизация ситуации под демографию
+```
+
+### 5. Игровые Комнаты (room_service.py)
+```python
+# Функции для реализации:
+- create_room() - создание комнаты (3-8 игроков)
+- join_room() - присоединение к комнате
+- leave_room() - выход из комнаты
+- start_game() - начало игры
+- get_room_status() - статус комнаты
+- handle_player_disconnect() - обработка отключения игрока
+```
+
+### 6. Игровой Процесс (game_service.py)
+```python
+# Функции для реализации:
+- start_round() - начало раунда
+- submit_card_choice() - выбор карты игроком
+- start_voting() - начало голосования
+- submit_vote() - голосование за карту
+- calculate_round_results() - подсчет результатов раунда
+- end_game() - завершение игры
+- handle_timeout() - обработка таймаутов
+```
+
+### 7. Рейтинговая Система (rating_service.py)
+```python
+# Функции для реализации:
+- calculate_rating() - расчет рейтинга
+- get_leaderboard() - получение топ-100
+- update_player_stats() - обновление статистики игрока
+- get_player_rank() - получение позиции в рейтинге
+```
+
+## 🔌 WEBSOCKET ЛОГИКА
+
+### WebSocket Manager
+- Управление соединениями игроков
+- Обработка отключений/переподключений
+- Синхронизация состояния игры
+- Broadcast сообщений в комнату
+
+### Обработка Отключений
+1. **Обнаружение**: WebSocketDisconnect событие
+2. **Уведомление**: Сообщение другим игрокам
+3. **Таймаут**: 30-60 секунд на переподключение
+4. **Исключение**: Автоматическое исключение после N раундов
+
+## 🗄️ БАЗА ДАННЫХ
+
+### Модели PostgreSQL
+```python
+# Основные таблицы:
+- users (id, firebase_uid, nickname, birth_date, gender, rating, created_at)
+- cards (id, name, image_url, type, is_unique, created_at)
+- user_cards (user_id, card_id, obtained_at)
+- rooms (id, creator_id, max_players, status, created_at)
+- room_participants (room_id, user_id, joined_at, status)
+- games (id, room_id, status, current_round, winner_id, created_at)
+- game_rounds (id, game_id, round_number, situation_text, duration, created_at)
+- player_choices (id, round_id, user_id, card_id, submitted_at)
+- votes (id, round_id, voter_id, card_id, created_at)
+```
+
+## 🎯 ТАЙМИНГИ И ИГРОВАЯ ЛОГИКА
+
+### Игровой Процесс
+1. **Ситуационная карточка**: 50 секунд на чтение
+2. **Уменьшение времени**: -5 секунд каждый раунд
+3. **Выбор карты**: Из 3 карт для раунда
+4. **Голосование**: За лучшую карту (кроме своей)
+5. **Награды**: 
+   - Победитель раунда → стандартная карта
+   - 3 победы подряд → уникальная карта
+
+### Система Отключений
+- **Таймаут неактивности**: 30-60 секунд
+- **Переподключение**: Возможность вернуться в игру
+- **Исключение**: После N раундов без активности
+
+## 🔧 ТЕХНИЧЕСКИЕ ТРЕБОВАНИЯ
+
+### FastAPI Настройки
+- Используй **async/await** везде
+- Настрой **CORS** для iOS приложения
+- Используй **middleware** для логирования
+- Настрой **rate limiting**
+- Используй **dependency injection**
+
+### Redis Использование
+- Кэширование пользовательских сессий
+- Хранение состояния игровых комнат
+- Кэширование рейтинговых данных
+- Temporary данные для WebSocket
+
+### Celery Задачи
+- Генерация ситуационных карточек
+- Обновление рейтингов
+- Очистка неактивных комнат
+- Загрузка карточек из Azure
+
+### Docker Настройки
+- Multi-stage builds для оптимизации
+- Health checks для всех сервисов
+- Volume mounting для development
+- Environment variables для конфигурации
+
+## 🛡️ БЕЗОПАСНОСТЬ
+
+### Firebase Integration
+- Проверка токенов на каждом запросе
+- Refresh token логика
+- Rate limiting для аутентификации
+
+### Валидация Данных
+- Pydantic схемы для всех endpoints
+- Санитизация пользовательских данных
+- Валидация игровых действий
+
+## 📊 МОНИТОРИНГ И ЛОГИРОВАНИЕ
+
+### Логирование
+- Структурированные логи (JSON)
+- Разные уровни для разных модулей
+- Логирование всех игровых событий
+- Ошибки с полным контекстом
+
+### Метрики
+- Количество активных игр
+- Время отклика API
+- WebSocket соединения
+- Ошибки по модулям
+
+## 🧪 ТЕСТИРОВАНИЕ
+
+### Unit Tests
+- Тесты для каждого сервиса
+- Моки для внешних зависимостей
+- Тестирование edge cases
+
+### Integration Tests
+- Тестирование API endpoints
+- WebSocket соединения
+- Игровые сценарии
+
+## 🚀 DEPLOYMENT
+
+### Staging Environment
+- Docker Compose для development
+- Отдельные конфигурации для stage/prod
+- Миграции базы данных
+
+### Production Considerations
+- Horizontal scaling для WebSocket
+- Redis Cluster для высокой доступности
+- PostgreSQL replica для чтения
+
+## 💡 ВАЖНЫЕ НАПОМИНАНИЯ
+
+1. **Всегда создавай виртуальное окружение для Python**
+2. **Каждый модуль должен быть независимым**
+3. **Используй async/await для всех I/O операций**
+4. **Обрабатывай все возможные ошибки**
+5. **Логируй все важные события**
+6. **Тестируй критически важные функции**
+7. **Используй type hints везде**
+8. **Следуй принципам SOLID**
+
+## 🎯 ПРИОРИТЕТЫ РАЗРАБОТКИ
+
+1. **Фаза 1**: Аутентификация + Пользователи + База данных
+2. **Фаза 2**: Карточки + Azure интеграция
+3. **Фаза 3**: Игровые комнаты + WebSocket
+4. **Фаза 4**: Игровая логика + ИИ генерация
+5. **Фаза 5**: Рейтинговая система + Оптимизация
+
+Начинай с создания виртуального окружения и базовой структуры проекта! 

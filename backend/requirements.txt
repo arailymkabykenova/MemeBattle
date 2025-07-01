@@ -1,0 +1,39 @@
+# FastAPI и основные компоненты
+fastapi
+uvicorn[standard]
+python-multipart
+
+# База данных - начнем с базовых
+sqlalchemy
+alembic
+
+# Утилиты
+python-dotenv
+
+# Валидация
+pydantic
+
+# WebSocket
+websockets
+
+# HTTP клиент
+httpx
+
+# Firebase Admin SDK
+firebase-admin
+
+# JWT токены
+python-jose[cryptography]
+PyJWT
+cryptography
+
+# Тестирование
+pytest
+pytest-asyncio
+
+# Azure Services
+azure-storage-blob
+openai  # Для Azure OpenAI тоже используется библиотека openai
+
+# Дополнительная совместимость
+asyncpg 
