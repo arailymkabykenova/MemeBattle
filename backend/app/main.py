@@ -3,14 +3,22 @@
 Здесь инициализируется приложение и подключаются роутеры.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import traceback
 from .core.config import settings
 from .core.database import init_database
 from .core.redis import init_redis, close_redis, get_redis_client
-from .routers import users, auth, cards, rooms, games
+# Импортируем роутеры по отдельности для избежания циклических импортов
+from .routers import auth
+from .routers import users
+from .routers import cards
+from .routers import rooms
+from .routers import games
 from .websocket import routes as websocket_routes
 from .websocket.connection_manager import init_connection_manager
+from .core.logging import auth_logger
 
 
 def create_application() -> FastAPI:
@@ -38,6 +46,28 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
     
+    # Добавляем обработчик ошибок
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Глобальный обработчик исключений"""
+        error_details = {
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "path": request.url.path,
+            "method": request.method,
+            "traceback": traceback.format_exc()
+        }
+        
+        auth_logger.error(
+            f"Unhandled exception in {request.method} {request.url.path}",
+            extra=error_details
+        )
+        
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(exc) if settings.debug else "Внутренняя ошибка сервера"}
+        )
+    
     # Подключаем роутеры
     app.include_router(auth.router)
     app.include_router(users.router)
@@ -57,12 +87,24 @@ app = create_application()
 async def startup_event():
     """События при запуске приложения"""
     print("🚀 Запуск Meme Card Game API...")
-    await init_database()
-    await init_redis()
     
-    # Инициализируем ConnectionManager с Redis клиентом
-    redis_client = get_redis_client()
-    await init_connection_manager(redis_client)
+    try:
+        await init_database()
+        print("✅ База данных инициализирована!")
+    except Exception as e:
+        print(f"⚠️  Ошибка инициализации базы данных: {e}")
+        print("   Приложение запустится без базы данных")
+    
+    try:
+        await init_redis()
+        print("✅ Redis инициализирован!")
+        
+        # Инициализируем ConnectionManager с Redis клиентом
+        redis_client = get_redis_client()
+        await init_connection_manager(redis_client)
+    except Exception as e:
+        print(f"⚠️  Ошибка инициализации Redis: {e}")
+        print("   Приложение запустится без Redis")
     
     print("✅ Приложение готово к работе!")
 
@@ -139,7 +181,7 @@ async def models_info():
         "models": {
             "users": {
                 "table_name": User.__tablename__,
-                "fields": ["id", "game_center_player_id", "nickname", "birth_date", "gender", "rating", "created_at"],
+                "fields": ["id", "nickname", "birth_date", "gender", "rating", "created_at"],
                 "gender_options": [g.value for g in Gender]
             },
             "cards": {

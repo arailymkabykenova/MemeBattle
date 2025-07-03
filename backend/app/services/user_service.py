@@ -10,7 +10,7 @@ from ..repositories.user_repository import UserRepository
 from ..repositories.card_repository import CardRepository
 from ..models.user import User, UserCard
 from ..models.card import CardType
-from ..schemas.user import UserCreate, UserUpdate, UserResponse, UserProfileResponse
+from ..schemas.user import UserCreate, UserUpdate, UserResponse, UserProfileResponse, UserProfileCreate
 from ..utils.exceptions import UserNotFoundError, DuplicateNicknameError, ValidationError
 from ..external.azure_client import azure_service
 
@@ -42,12 +42,6 @@ class UserService:
         if existing_user:
             raise DuplicateNicknameError(f"Никнейм '{user_data.nickname}' уже занят")
         
-        # Проверяем уникальность Game Center Player ID
-        if hasattr(user_data, 'game_center_player_id') and user_data.game_center_player_id:
-            existing_gc_user = await self.user_repo.get_by_game_center_id(user_data.game_center_player_id)
-            if existing_gc_user:
-                raise ValidationError("Пользователь с таким Game Center Player ID уже существует")
-        
         # Создаем пользователя
         user = await self.user_repo.create(user_data)
         
@@ -55,6 +49,27 @@ class UserService:
         await self.assign_starter_cards(user.id)
         
         return UserResponse.model_validate(user)
+    
+    async def complete_user_profile(self, user_id: int, profile_data: UserProfileCreate) -> UserResponse:
+        """
+        Заполняет профиль пользователя (никнейм, дата рождения, пол).
+        
+        Args:
+            user_id: ID пользователя
+            profile_data: Данные профиля
+            
+        Returns:
+            UserResponse: Обновленный пользователь
+            
+        Raises:
+            UserNotFoundError: Если пользователь не найден
+            ValidationError: Если профиль уже заполнен или данные невалидны
+        """
+        user = await self.user_repo.complete_profile(user_id, profile_data)
+        if not user:
+            raise UserNotFoundError(f"Пользователь с ID {user_id} не найден")
+        
+        return UserResponse.from_orm_with_age(user)
     
     async def get_user_profile(self, user_id: int) -> UserProfileResponse:
         """
@@ -167,8 +182,8 @@ class UserService:
         if existing_cards.scalars().first():
             raise ValidationError("Пользователь уже получил стартовые карты")
         
-        # Получаем доступные стартовые карты из Azure
-        azure_starter_cards = await azure_service.list_cards_in_folder("starter")
+        # Получаем доступные стартовые карты из Azure с деталями
+        azure_starter_cards = await azure_service.list_cards_in_folder_with_details("starter")
         if len(azure_starter_cards) < count:
             raise ValidationError(f"В Azure недостаточно стартовых карт. Доступно: {len(azure_starter_cards)}, требуется: {count}")
         
@@ -178,16 +193,20 @@ class UserService:
         # Добавляем в базу данных
         assigned_cards = []
         for card in selected_cards:
+            card_number = card["card_number"]
+            card_url = card["url"]
+            
             user_card = UserCard(
                 user_id=user_id,
                 card_type="starter",
-                card_number=card["card_number"]
+                card_number=card_number
             )
             self.db.add(user_card)
             assigned_cards.append({
                 "card_type": "starter",
-                "card_number": card["card_number"],
-                "card_url": card["url"]
+                "card_number": card_number,
+                "card_url": card_url,
+                "card_name": card["card_name"]
             })
         
         await self.db.commit()
@@ -362,6 +381,50 @@ class UserService:
             Optional[int]: Позиция в рейтинге или None
         """
         return await self.user_repo.get_user_rank(user_id)
+    
+    async def get_user_by_id(self, user_id: int) -> Optional[User]:
+        """
+        Получает пользователя по ID.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            Optional[User]: Пользователь или None
+        """
+        return await self.user_repo.get_by_id(user_id)
+    
+    async def get_user_stats(self, user_id: int) -> Dict[str, Any]:
+        """
+        Получает статистику пользователя.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            Dict[str, Any]: Статистика пользователя
+        """
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise UserNotFoundError(f"Пользователь с ID {user_id} не найден")
+        
+        # Получаем карты пользователя
+        user_cards = await self.card_repo.get_user_cards(user_id)
+        cards_count = len(user_cards)
+        
+        # Получаем позицию в рейтинге
+        rank = await self.user_repo.get_user_rank(user_id)
+        
+        # Базовая статистика
+        stats = {
+            "total_cards": cards_count,
+            "rating": user.rating,
+            "rank": rank or 0,
+            "profile_complete": user.is_profile_complete,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        }
+        
+        return stats
     
     async def check_nickname_availability(self, nickname: str) -> bool:
         """

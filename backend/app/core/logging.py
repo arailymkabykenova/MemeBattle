@@ -5,9 +5,11 @@
 import logging
 import json
 import sys
+import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 from pathlib import Path
+import traceback
 
 from .config import settings
 
@@ -28,19 +30,23 @@ class JSONFormatter(logging.Formatter):
         }
         
         # Добавляем дополнительные поля если есть
-        if hasattr(record, 'user_id'):
-            log_entry['user_id'] = record.user_id
-        if hasattr(record, 'room_id'):
-            log_entry['room_id'] = record.room_id
-        if hasattr(record, 'game_id'):
-            log_entry['game_id'] = record.game_id
-        if hasattr(record, 'action'):
-            log_entry['action'] = record.action
+        if hasattr(record, 'extra'):
+            log_entry.update(record.extra)
         
         # Добавляем exception info если есть
         if record.exc_info:
-            log_entry['exception'] = self.formatException(record.exc_info)
+            exc_type, exc_value, exc_tb = record.exc_info
+            log_entry['exception'] = {
+                'type': str(exc_type.__name__),
+                'message': str(exc_value),
+                'module': getattr(exc_type, '__module__', 'unknown'),
+                'traceback': ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            }
         
+        # Добавляем traceback если есть
+        if hasattr(record, 'stack_info') and record.stack_info:
+            log_entry['stack_info'] = record.stack_info
+            
         return json.dumps(log_entry, ensure_ascii=False)
 
 
@@ -49,7 +55,7 @@ class GameLogger:
     
     def __init__(self, logger_name: str = "game"):
         self.logger = logging.getLogger(logger_name)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG if settings.debug else logging.INFO)
         
         # Добавляем обработчики если их еще нет
         if not self.logger.handlers:
@@ -57,172 +63,115 @@ class GameLogger:
     
     def _setup_handlers(self):
         """Настраивает обработчики логов."""
-        # Консольный обработчик
+        # Создаем директорию для логов
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True, parents=True)
+        
+        # Консольный обработчик для всех уровней
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.DEBUG if settings.debug else logging.INFO)
         console_handler.setFormatter(JSONFormatter())
         self.logger.addHandler(console_handler)
         
-        # Файловый обработчик для production
-        if settings.ENVIRONMENT == "production":
-            log_dir = Path("logs")
-            log_dir.mkdir(exist_ok=True)
-            
-            file_handler = logging.FileHandler(log_dir / "game.log")
-            file_handler.setLevel(logging.INFO)
-            file_handler.setFormatter(JSONFormatter())
-            self.logger.addHandler(file_handler)
+        # Файловый обработчик для всех логов
+        all_handler = logging.FileHandler(log_dir / "all.log")
+        all_handler.setLevel(logging.DEBUG)
+        all_handler.setFormatter(JSONFormatter())
+        self.logger.addHandler(all_handler)
+        
+        # Файловый обработчик только для ошибок
+        error_handler = logging.FileHandler(log_dir / "error.log")
+        error_handler.setLevel(logging.ERROR)
+        error_handler.setFormatter(JSONFormatter())
+        self.logger.addHandler(error_handler)
+        
+        # Файловый обработчик для аутентификации
+        auth_handler = logging.FileHandler(log_dir / "auth.log")
+        auth_handler.setLevel(logging.DEBUG)
+        auth_handler.setFormatter(JSONFormatter())
+        self.logger.addHandler(auth_handler)
     
-    def log_user_action(
-        self, 
-        user_id: int, 
-        action: str, 
-        details: Optional[Dict[str, Any]] = None,
-        level: str = "info"
-    ):
-        """Логирует действие пользователя."""
-        log_record = logging.LogRecord(
-            name=self.logger.name,
-            level=getattr(logging, level.upper()),
-            pathname="",
-            lineno=0,
-            msg=f"User action: {action}",
-            args=(),
-            exc_info=None
-        )
-        log_record.user_id = user_id
-        log_record.action = action
-        
-        if details:
-            log_record.msg += f" - {json.dumps(details, ensure_ascii=False)}"
-        
-        self.logger.handle(log_record)
+    def debug(self, msg: str, **kwargs):
+        """Логирует отладочное сообщение."""
+        self._log(logging.DEBUG, msg, **kwargs)
     
-    def log_room_event(
-        self, 
-        room_id: int, 
-        event: str, 
-        user_id: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
-        level: str = "info"
-    ):
-        """Логирует событие в комнате."""
-        log_record = logging.LogRecord(
-            name=self.logger.name,
-            level=getattr(logging, level.upper()),
-            pathname="",
-            lineno=0,
-            msg=f"Room event: {event}",
-            args=(),
-            exc_info=None
-        )
-        log_record.room_id = room_id
-        log_record.action = event
-        
-        if user_id:
-            log_record.user_id = user_id
-        
-        if details:
-            log_record.msg += f" - {json.dumps(details, ensure_ascii=False)}"
-        
-        self.logger.handle(log_record)
+    def info(self, msg: str, **kwargs):
+        """Логирует информационное сообщение."""
+        self._log(logging.INFO, msg, **kwargs)
     
-    def log_game_event(
-        self, 
-        game_id: int, 
-        event: str, 
-        room_id: Optional[int] = None,
-        user_id: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
-        level: str = "info"
-    ):
-        """Логирует игровое событие."""
-        log_record = logging.LogRecord(
-            name=self.logger.name,
-            level=getattr(logging, level.upper()),
-            pathname="",
-            lineno=0,
-            msg=f"Game event: {event}",
-            args=(),
-            exc_info=None
-        )
-        log_record.game_id = game_id
-        log_record.action = event
-        
-        if room_id:
-            log_record.room_id = room_id
-        if user_id:
-            log_record.user_id = user_id
-        
-        if details:
-            log_record.msg += f" - {json.dumps(details, ensure_ascii=False)}"
-        
-        self.logger.handle(log_record)
+    def warning(self, msg: str, **kwargs):
+        """Логирует предупреждение."""
+        self._log(logging.WARNING, msg, **kwargs)
     
-    def log_error(
-        self, 
-        error: str, 
-        user_id: Optional[int] = None,
-        room_id: Optional[int] = None,
-        game_id: Optional[int] = None,
-        exception: Optional[Exception] = None
-    ):
+    def error(self, msg: str, **kwargs):
         """Логирует ошибку."""
-        log_record = logging.LogRecord(
-            name=self.logger.name,
-            level=logging.ERROR,
-            pathname="",
-            lineno=0,
-            msg=f"Error: {error}",
-            args=(),
-            exc_info=(type(exception), exception, exception.__traceback__) if exception else None
-        )
-        
-        if user_id:
-            log_record.user_id = user_id
-        if room_id:
-            log_record.room_id = room_id
-        if game_id:
-            log_record.game_id = game_id
-        
-        self.logger.handle(log_record)
+        self._log(logging.ERROR, msg, **kwargs)
     
-    def log_websocket_event(
-        self, 
-        event: str, 
-        user_id: Optional[int] = None,
-        room_id: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
-        level: str = "info"
-    ):
-        """Логирует WebSocket событие."""
-        log_record = logging.LogRecord(
-            name=self.logger.name,
-            level=getattr(logging, level.upper()),
-            pathname="",
-            lineno=0,
-            msg=f"WebSocket event: {event}",
-            args=(),
-            exc_info=None
-        )
-        log_record.action = event
-        
-        if user_id:
-            log_record.user_id = user_id
-        if room_id:
-            log_record.room_id = room_id
-        
+    def critical(self, msg: str, **kwargs):
+        """Логирует критическую ошибку."""
+        self._log(logging.CRITICAL, msg, **kwargs)
+
+    def log_user_action(self, user_id: Optional[int], action: str, details: Dict[str, Any] = None):
+        """Логирует действие пользователя."""
+        extra = {
+            'action': action,
+            'user_id': user_id
+        }
         if details:
-            log_record.msg += f" - {json.dumps(details, ensure_ascii=False)}"
+            extra.update(details)
+        self._log(logging.INFO, f"User action: {action}", extra=extra)
+
+    def log_error(self, error: str, exception: Optional[Exception] = None, details: Dict[str, Any] = None):
+        """Логирует ошибку с дополнительными деталями."""
+        extra = {}
+        if details:
+            extra.update(details)
+        self._log(logging.ERROR, error, exception=exception, extra=extra)
+    
+    def _log(self, level: int, msg: str, **kwargs):
+        """Внутренний метод для логирования."""
+        extra = kwargs.get('extra', {})
+        exc_info = kwargs.get('exc_info')
+        stack_info = kwargs.get('stack_info', False)
         
-        self.logger.handle(log_record)
+        # Если передано исключение, добавляем его информацию
+        if 'exception' in kwargs:
+            exc = kwargs['exception']
+            if exc_info is None:  # Если exc_info не установлен явно
+                exc_info = (type(exc), exc, exc.__traceback__)
+            
+            # Добавляем информацию об исключении в extra
+            extra.update({
+                'exception_type': type(exc).__name__,
+                'exception_message': str(exc),
+                'exception_module': getattr(exc, '__module__', 'unknown')
+            })
+        
+        # Создаем запись лога
+        record = logging.LogRecord(
+            name=self.logger.name,
+            level=level,
+            pathname=__file__,
+            lineno=0,  # Будет заполнено автоматически
+            msg=msg,
+            args=(),
+            exc_info=exc_info,
+            func=sys._getframe(1).f_code.co_name
+        )
+        
+        # Добавляем дополнительные поля
+        for key, value in extra.items():
+            setattr(record, key, value)
+        
+        # Добавляем stack_info если запрошено
+        if stack_info:
+            record.stack_info = ''.join(traceback.format_stack())
+        
+        self.logger.handle(record)
 
 
-# Создаем глобальные логгеры
-game_logger = GameLogger("game")
+# Создаем логгер для аутентификации
 auth_logger = GameLogger("auth")
-api_logger = GameLogger("api")
-websocket_logger = GameLogger("websocket")
 
 
 def get_logger(name: str) -> GameLogger:
@@ -261,7 +210,7 @@ def log_request(
     
     log_record.msg += f" - {json.dumps(details, ensure_ascii=False)}"
     
-    api_logger.logger.handle(log_record)
+    GameLogger("api").logger.handle(log_record)
 
 
 def log_database_query(

@@ -129,14 +129,21 @@ class CardService:
                 f"Доступно: {len(starter_cards)}, требуется: {count}"
             )
         
-        # Присваиваем карты пользователю
-        card_ids = [card.id for card in starter_cards]
-        await self.card_repo.assign_multiple_cards_to_user(user_id, card_ids)
+        # Присваиваем карты пользователю (гибридный подход)
+        cards_data = []
+        for card in starter_cards:
+            # Извлекаем номер карты из Azure пути или используем ID как fallback
+            card_number = getattr(card, 'card_number', card.id)
+            cards_data.append({
+                "card_type": "starter",
+                "card_number": card_number
+            })
+        
+        await self.card_repo.assign_multiple_cards_to_user(user_id, cards_data)
         
         return {
-            "message": f"Выдано {len(card_ids)} стартовых карт",
-            "cards_assigned": len(card_ids),
-            "card_ids": card_ids,
+            "message": f"Выдано {len(cards_data)} стартовых карт",
+            "cards_assigned": len(cards_data),
             "cards": [CardResponse.model_validate(card) for card in starter_cards]
         }
     
@@ -167,8 +174,9 @@ class CardService:
         
         card = available_cards[0]
         
-        # Присваиваем карту пользователю
-        await self.card_repo.assign_card_to_user(user_id, card.id)
+        # Присваиваем карту пользователю (гибридный подход)
+        card_number = getattr(card, 'card_number', card.id)
+        await self.card_repo.assign_card_to_user(user_id, card.card_type.value, card_number)
         
         return CardResponse.model_validate(card)
     
@@ -198,9 +206,20 @@ class CardService:
             "unique": []
         }
         
-        for card in user_cards:
-            card_response = CardResponse.model_validate(card)
-            grouped_cards[card.card_type].append(card_response)
+        for card_data in user_cards:
+            # Создаем простую структуру карты для гибридного подхода
+            card_info = {
+                "id": f"{card_data['card_type']}_{card_data['card_number']}",
+                "name": f"{card_data['card_type'].title()} Card {card_data['card_number']}",
+                "image_url": f"azure://{card_data['card_type']}/{card_data['card_number']}.jpg",
+                "card_type": card_data['card_type'],
+                "description": f"{card_data['card_type'].title()} card number {card_data['card_number']}",
+                "created_at": card_data['obtained_at'],
+                "is_starter_card": card_data['card_type'] == 'starter',
+                "is_standard_card": card_data['card_type'] == 'standard',
+                "is_unique_card": card_data['card_type'] == 'unique'
+            }
+            grouped_cards[card_data['card_type']].append(card_info)
         
         return {
             "user_id": user_id,
@@ -243,7 +262,23 @@ class CardService:
         # Выбираем случайные карты из коллекции пользователя
         selected_cards = random.sample(user_cards, round_count)
         
-        return [CardResponse.model_validate(card) for card in selected_cards]
+        # Создаем CardResponse объекты для гибридного подхода
+        card_responses = []
+        for card_data in selected_cards:
+            card_info = {
+                "id": f"{card_data['card_type']}_{card_data['card_number']}",
+                "name": f"{card_data['card_type'].title()} Card {card_data['card_number']}",
+                "image_url": f"azure://{card_data['card_type']}/{card_data['card_number']}.jpg",
+                "card_type": card_data['card_type'],
+                "description": f"{card_data['card_type'].title()} card number {card_data['card_number']}",
+                "created_at": card_data['obtained_at'],
+                "is_starter_card": card_data['card_type'] == 'starter',
+                "is_standard_card": card_data['card_type'] == 'standard',
+                "is_unique_card": card_data['card_type'] == 'unique'
+            }
+            card_responses.append(CardResponse.model_validate(card_info))
+        
+        return card_responses
     
     async def get_card_statistics(self) -> Dict[str, Any]:
         """
@@ -254,9 +289,9 @@ class CardService:
         """
         total_cards = await self.card_repo.get_total_count()
         
-        starter_count = len(await self.card_repo.get_by_type(CardType.STARTER))
-        standard_count = len(await self.card_repo.get_by_type(CardType.STANDARD))
-        unique_count = len(await self.card_repo.get_by_type(CardType.UNIQUE))
+        starter_count = await self.card_repo.get_count_by_type(CardType.STARTER)
+        standard_count = await self.card_repo.get_count_by_type(CardType.STANDARD)
+        unique_count = await self.card_repo.get_count_by_type(CardType.UNIQUE)
         
         stats = {
             "total_cards": total_cards,
@@ -267,7 +302,7 @@ class CardService:
             },
             "card_types": [t.value for t in CardType],
             "system_ready": starter_count >= 10,  # Минимум для выдачи стартовых карт
-            "azure_connected": self.azure_service is not None and await self.azure_service.is_connected()
+            "azure_connected": self.azure_service is not None
         }
         
         # Статистика из Azure
@@ -434,11 +469,8 @@ class CardService:
         Returns:
             List[Dict]: Случайные карты пользователя
         """
-        # Получаем все карты пользователя
-        user_cards_result = await self.db.execute(
-            select(UserCard).where(UserCard.user_id == user_id)
-        )
-        user_cards = user_cards_result.scalars().all()
+        # Получаем все карты пользователя через репозиторий
+        user_cards = await self.card_repo.get_user_cards(user_id)
         
         if not user_cards:
             raise ValidationError("У пользователя нет карт")
@@ -449,20 +481,16 @@ class CardService:
             min(count, len(user_cards))
         )
         
-        # Обогащаем данными из Azure
+        # Преобразуем в формат для игры
         game_cards = []
-        for user_card in selected_cards:
+        for card in selected_cards:
             card_info = {
-                "card_type": user_card.card_type,
-                "card_number": user_card.card_number,
-                "obtained_at": user_card.obtained_at
+                "id": card.id,
+                "name": card.name,
+                "card_type": card.card_type.value,
+                "image_url": card.image_url,
+                "is_unique": card.is_unique
             }
-            
-            # Добавляем URL из Azure
-            if self.azure_service:
-                card_info["card_url"] = self.azure_service.get_card_url(
-                    user_card.card_type, user_card.card_number
-                )
             
             game_cards.append(card_info)
         

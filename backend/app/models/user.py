@@ -5,6 +5,7 @@
 
 from datetime import datetime, date
 from enum import Enum
+from typing import Optional
 from sqlalchemy import String, Integer, DateTime, Date, Float, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..core.database import Base
@@ -21,16 +22,16 @@ class User(Base):
     """
     Модель пользователя.
     
-    Соответствует схеме: users (id, game_center_player_id, nickname, birth_date, gender, rating, created_at)
+    Соответствует схеме: users (id, device_id, nickname, birth_date, gender, rating, created_at)
     """
     __tablename__ = "users"
     
     # Основные поля
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    game_center_player_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
-    nickname: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-    birth_date: Mapped[date] = mapped_column(Date, nullable=False)
-    gender: Mapped[Gender] = mapped_column(String(10), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    nickname: Mapped[Optional[str]] = mapped_column(String(50), unique=True, index=True, nullable=True)
+    birth_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    gender: Mapped[Optional[Gender]] = mapped_column(String(10), nullable=True)
     rating: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     
@@ -40,15 +41,23 @@ class User(Base):
     # room_participations: Mapped[list["RoomParticipant"]] = relationship(back_populates="user")
     
     def __repr__(self) -> str:
-        return f"<User(id={self.id}, nickname='{self.nickname}', rating={self.rating})>"
+        return f"<User(id={self.id}, device_id='{self.device_id}', nickname='{self.nickname}', rating={self.rating})>"
     
     @property
-    def age(self) -> int:
+    def age(self) -> Optional[int]:
         """Вычисляет возраст пользователя на основе даты рождения"""
+        if not self.birth_date:
+            return None
+            
         today = date.today()
         return today.year - self.birth_date.year - (
             (today.month, today.day) < (self.birth_date.month, self.birth_date.day)
         )
+    
+    @property
+    def is_profile_complete(self) -> bool:
+        """Проверяет, заполнен ли профиль пользователя"""
+        return bool(self.nickname and self.birth_date and self.gender)
 
 
 class UserCard(Base):

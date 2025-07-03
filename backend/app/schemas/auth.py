@@ -7,23 +7,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class GameCenterAuthRequest(BaseModel):
-    """Схема запроса аутентификации Game Center"""
-    player_id: str = Field(..., description="Game Center Player ID")
-    public_key_url: str = Field(..., description="URL публичного ключа Apple")
-    signature: str = Field(..., description="Подпись от Apple")
-    salt: str = Field(..., description="Соль для верификации")
-    timestamp: int = Field(..., description="Временная метка")
-
-
-class GameCenterUserProfileRequest(BaseModel):
-    """Схема для создания профиля пользователя после аутентификации Game Center"""
-    player_id: str = Field(..., description="Game Center Player ID")
-    nickname: str = Field(..., min_length=2, max_length=50, description="Никнейм пользователя")
-    birth_date: str = Field(..., description="Дата рождения в формате YYYY-MM-DD")
-    gender: str = Field(..., description="Пол пользователя (male/female/other)")
-
-
 class TokenResponse(BaseModel):
     """Схема ответа с токеном"""
     access_token: str = Field(..., description="JWT токен доступа")
@@ -46,20 +29,20 @@ class UserLoginResponse(BaseModel):
     is_new_user: bool = Field(..., description="Новый ли это пользователь")
 
 
+class AuthResponse(BaseModel):
+    """Схема ответа аутентификации"""
+    access_token: str = Field(..., description="JWT токен доступа")
+    token_type: str = Field(default="bearer", description="Тип токена")
+    user: dict = Field(..., description="Данные пользователя")
+    is_new_user: bool = Field(..., description="Новый ли это пользователь")
+
+
 class AuthStatusResponse(BaseModel):
     """Схема статуса аутентификации"""
     game_center_available: bool = Field(..., description="Доступна ли аутентификация Game Center")
     jwt_enabled: bool = Field(..., description="Включена ли JWT аутентификация")
     supported_platforms: list[str] = Field(..., description="Поддерживаемые платформы")
     message: str = Field(..., description="Статусное сообщение")
-
-
-class GameCenterVerificationResponse(BaseModel):
-    """Схема ответа верификации Game Center"""
-    player_id: str
-    is_valid: bool
-    error_message: Optional[str] = None
-    verification_timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class LogoutRequest(BaseModel):

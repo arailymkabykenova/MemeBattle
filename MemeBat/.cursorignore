@@ -1,0 +1,32 @@
+# =========================
+# Xcode & Swift Ignore List
+# =========================
+
+# Папка со всеми продуктами сборки и кэшем.
+# САМЫЙ ГЛАВНЫЙ ИСТОЧНИК ТОРМОЗОВ!
+DerivedData/
+
+# Продукты сборки
+build/
+Build/
+
+# Файлы проекта и рабочего пространства, которые не нужны AI
+# Они содержат личные настройки, которые только сбивают с толку
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/
+*.xcuserstate
+
+# Зависимости, установленные через Swift Package Manager (SPM)
+# Это код чужих библиотек, его лучше пока игнорировать
+.build/
+Packages/
+
+# Зависимости CocoaPods
+Pods/
+
+# Зависимости Carthage
+Carthage/
+
+# Системные файлы macOS
+.DS_Store

@@ -31,8 +31,8 @@ class CardBase(BaseModel):
         if not v.strip():
             raise ValueError("URL изображения не может быть пустым")
         
-        # Базовая проверка на URL формат
-        if not (v.startswith('http://') or v.startswith('https://') or v.startswith('/')):
+        # Базовая проверка на URL формат (добавляем поддержку azure://)
+        if not (v.startswith('http://') or v.startswith('https://') or v.startswith('/') or v.startswith('azure://')):
             raise ValueError("Некорректный формат URL")
         
         return v.strip()
@@ -69,7 +69,7 @@ class CardUpdate(BaseModel):
         if not v.strip():
             raise ValueError("URL изображения не может быть пустым")
         
-        if not (v.startswith('http://') or v.startswith('https://') or v.startswith('/')):
+        if not (v.startswith('http://') or v.startswith('https://') or v.startswith('/') or v.startswith('azure://')):
             raise ValueError("Некорректный формат URL")
         
         return v.strip()
@@ -77,7 +77,7 @@ class CardUpdate(BaseModel):
 
 class CardResponse(CardBase):
     """Схема ответа с данными карточки"""
-    id: int
+    id: str = Field(description="Уникальный идентификатор карточки")
     created_at: datetime
     
     # Вычисляемые поля (взяты из свойств модели Card)

@@ -11,14 +11,17 @@ from ..models.user import Gender
 
 class UserBase(BaseModel):
     """Базовая схема пользователя с общими полями"""
-    nickname: str = Field(..., min_length=2, max_length=50, description="Никнейм пользователя")
-    birth_date: date = Field(..., description="Дата рождения")
-    gender: Gender = Field(..., description="Пол пользователя")
+    nickname: Optional[str] = Field(None, min_length=2, max_length=50, description="Никнейм пользователя")
+    birth_date: Optional[date] = Field(None, description="Дата рождения")
+    gender: Optional[Gender] = Field(None, description="Пол пользователя")
     
     @field_validator('birth_date')
     @classmethod
-    def validate_birth_date(cls, v: date) -> date:
+    def validate_birth_date(cls, v: Optional[date]) -> Optional[date]:
         """Валидация даты рождения"""
+        if v is None:
+            return None
+            
         today = date.today()
         age = today.year - v.year - ((today.month, today.day) < (v.month, v.day))
         
@@ -31,13 +34,16 @@ class UserBase(BaseModel):
     
     @field_validator('nickname')
     @classmethod
-    def validate_nickname(cls, v: str) -> str:
+    def validate_nickname(cls, v: Optional[str]) -> Optional[str]:
         """Валидация никнейма"""
+        if v is None:
+            return None
+            
         if not v.strip():
             raise ValueError("Никнейм не может быть пустым")
         
-        # Базовая проверка на допустимые символы
-        allowed_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-абвгдеёжзийклмнопрстуфхцчшщъыьэюя')
+        # Базовая проверка на допустимые символы (латиница, цифры, кириллица, дефис, подчеркивание)
+        allowed_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ')
         if not all(c in allowed_chars for c in v):
             raise ValueError("Никнейм содержит недопустимые символы")
         
@@ -45,16 +51,17 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    """Схема для создания пользователя"""
-    game_center_player_id: str = Field(..., min_length=1, max_length=128, description="Game Center Player ID")
-    
-    @field_validator('game_center_player_id')
-    @classmethod
-    def validate_game_center_player_id(cls, v: str) -> str:
-        """Валидация Game Center Player ID"""
-        if not v.strip():
-            raise ValueError("Game Center Player ID не может быть пустым")
-        return v.strip()
+    """
+    Схема для создания пользователя
+    """
+    # game_center_player_id: str = Field(..., min_length=1, max_length=128, description="Game Center Player ID")
+    # @field_validator('game_center_player_id')
+    # @classmethod
+    # def validate_game_center_player_id(cls, v: str) -> str:
+    #     if not v.strip():
+    #         raise ValueError("Game Center Player ID не может быть пустым")
+    #     return v.strip()
+    # Оставляем только device_id, nickname, birth_date, gender и т.д.
 
 
 class UserUpdate(BaseModel):
@@ -81,15 +88,19 @@ class UserUpdate(BaseModel):
         return v
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     """Схема ответа с данными пользователя"""
     id: int
-    game_center_player_id: str
-    rating: float
+    device_id: str
+    nickname: Optional[str] = Field(None, description="Никнейм пользователя")
+    birth_date: Optional[date] = Field(None, description="Дата рождения")
+    gender: Optional[Gender] = Field(None, description="Пол пользователя")
+    rating: float = Field(default=0.0)
     created_at: datetime
     
     # Вычисляемые поля
     age: Optional[int] = Field(None, description="Возраст пользователя")
+    is_profile_complete: bool = Field(default=False, description="Заполнен ли профиль")
     
     class Config:
         from_attributes = True
@@ -97,8 +108,19 @@ class UserResponse(UserBase):
     @staticmethod
     def from_orm_with_age(user_orm):
         """Создает UserResponse из ORM объекта с вычислением возраста"""
+        # Создаем базовый объект из ORM модели
         user_data = UserResponse.model_validate(user_orm)
+        
+        # Используем свойство age из модели User
         user_data.age = user_orm.age
+        
+        # Проверяем заполненность профиля
+        user_data.is_profile_complete = all([
+            user_orm.nickname,
+            user_orm.birth_date,
+            user_orm.gender
+        ])
+        
         return user_data
 
 
@@ -126,4 +148,52 @@ class UserCardsGroupedResponse(BaseModel):
 class UserProfileResponse(UserResponse):
     """Расширенная схема профиля пользователя"""
     cards_count: Optional[int] = Field(None, description="Общее количество карт")
-    rank: Optional[int] = Field(None, description="Позиция в рейтинге") 
+    rank: Optional[int] = Field(None, description="Позиция в рейтинге")
+
+
+class UserProfileCreate(BaseModel):
+    """Схема для заполнения профиля пользователя после аутентификации"""
+    nickname: str = Field(..., min_length=2, max_length=50, description="Никнейм пользователя")
+    birth_date: date = Field(..., description="Дата рождения")
+    gender: Gender = Field(..., description="Пол пользователя")
+    
+    @field_validator('birth_date')
+    @classmethod
+    def validate_birth_date(cls, v: date) -> date:
+        """Валидация даты рождения"""
+        today = date.today()
+        age = today.year - v.year - ((today.month, today.day) < (v.month, v.day))
+        
+        if age < 6:
+            raise ValueError("Возраст должен быть не менее 6 лет")
+        if age > 120:
+            raise ValueError("Некорректная дата рождения")
+        if v > today:
+            raise ValueError("Дата рождения не может быть в будущем")
+        
+        return v
+    
+    @field_validator('nickname')
+    @classmethod
+    def validate_nickname(cls, v: str) -> str:
+        """Валидация никнейма"""
+        if not v.strip():
+            raise ValueError("Никнейм не может быть пустым")
+        
+        # Базовая проверка на допустимые символы (латиница, цифры, кириллица, дефис, подчеркивание)
+        allowed_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ')
+        if not all(c in allowed_chars for c in v):
+            raise ValueError("Никнейм содержит недопустимые символы")
+        
+        return v.strip()
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserResponse
+    is_new_user: bool
+
+
+class DeviceAuthRequest(BaseModel):
+    device_id: str = Field(..., description="Уникальный идентификатор устройства") 

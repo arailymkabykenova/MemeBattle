@@ -3,7 +3,7 @@
 Содержит методы для CRUD операций с карточками.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from ..models.card import Card, CardType
@@ -117,23 +117,34 @@ class CardRepository:
         )
         return result.scalars().all()
     
-    async def get_user_cards(self, user_id: int) -> List[Card]:
+    async def get_user_cards(self, user_id: int) -> List[Dict[str, Any]]:
         """
-        Получает все карточки пользователя.
+        Получает все карточки пользователя (гибридный подход).
         
         Args:
             user_id: ID пользователя
             
         Returns:
-            List[Card]: Список карточек пользователя
+            List[Dict[str, Any]]: Список карточек пользователя с данными из Azure
         """
         result = await self.db.execute(
-            select(Card)
-            .join(UserCard)
+            select(UserCard)
             .where(UserCard.user_id == user_id)
             .order_by(UserCard.obtained_at.desc())
         )
-        return result.scalars().all()
+        user_cards = result.scalars().all()
+        
+        # Обогащаем данными из Azure
+        cards_data = []
+        for user_card in user_cards:
+            cards_data.append({
+                "user_id": user_card.user_id,
+                "card_type": user_card.card_type,
+                "card_number": user_card.card_number,
+                "obtained_at": user_card.obtained_at
+            })
+        
+        return cards_data
     
     async def get_user_cards_by_type(self, user_id: int, card_type: CardType) -> List[Card]:
         """
@@ -148,7 +159,8 @@ class CardRepository:
         """
         result = await self.db.execute(
             select(Card)
-            .join(UserCard)
+            .select_from(UserCard)
+            .join(Card, UserCard.card_id == Card.id)
             .where(
                 and_(
                     UserCard.user_id == user_id,
@@ -159,37 +171,42 @@ class CardRepository:
         )
         return result.scalars().all()
     
-    async def assign_card_to_user(self, user_id: int, card_id: int) -> UserCard:
+    async def assign_card_to_user(self, user_id: int, card_type: str, card_number: int) -> UserCard:
         """
-        Присваивает карточку пользователю.
+        Присваивает карточку пользователю (гибридный подход).
         
         Args:
             user_id: ID пользователя
-            card_id: ID карточки
+            card_type: Тип карточки (starter, standard, unique)
+            card_number: Номер карточки в Azure папке
             
         Returns:
             UserCard: Связь пользователя и карточки
         """
-        user_card = UserCard(user_id=user_id, card_id=card_id)
+        user_card = UserCard(user_id=user_id, card_type=card_type, card_number=card_number)
         self.db.add(user_card)
         await self.db.commit()
         await self.db.refresh(user_card)
         return user_card
     
-    async def assign_multiple_cards_to_user(self, user_id: int, card_ids: List[int]) -> List[UserCard]:
+    async def assign_multiple_cards_to_user(self, user_id: int, cards_data: List[Dict[str, Any]]) -> List[UserCard]:
         """
-        Присваивает несколько карточек пользователю.
+        Присваивает несколько карточек пользователю (гибридный подход).
         
         Args:
             user_id: ID пользователя
-            card_ids: Список ID карточек
+            cards_data: Список словарей с card_type и card_number
             
         Returns:
             List[UserCard]: Список связей пользователя и карточек
         """
         user_cards = []
-        for card_id in card_ids:
-            user_card = UserCard(user_id=user_id, card_id=card_id)
+        for card_data in cards_data:
+            user_card = UserCard(
+                user_id=user_id, 
+                card_type=card_data["card_type"], 
+                card_number=card_data["card_number"]
+            )
             self.db.add(user_card)
             user_cards.append(user_card)
         

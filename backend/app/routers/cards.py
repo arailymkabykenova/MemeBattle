@@ -2,6 +2,7 @@
 API endpoints для работы с карточками.
 """
 
+import traceback
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,14 +10,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_db
 from ..core.dependencies import get_current_user
 from ..services.card_service import CardService
+from ..services.user_service import UserService
 from ..schemas.card import CardResponse, CardListResponse, CardCreate
-from ..schemas.user import UserResponse
+from ..schemas.user import UserResponse, UserCreate
 from ..models.card import CardType
 from ..utils.exceptions import ValidationError, UserNotFoundError
 from ..external.azure_client import azure_service
 
 router = APIRouter(prefix="/cards", tags=["cards"])
 
+
+# @router.get("/", response_model=CardListResponse)
+# async def get_all_cards(
+#     limit: int = Query(default=50, ge=1, le=100, description="Количество карт на страницу"),
+#     offset: int = Query(default=0, ge=0, description="Смещение для пагинации"),
+#     db: AsyncSession = Depends(get_db)
+# ):
+#     """
+#     Получает список всех карт с пагинацией.
+    
+#     - **limit**: максимальное количество карт (1-100)
+#     - **offset**: смещение для пагинации
+#     """
+#     card_service = CardService(db)
+#     try:
+#         return await card_service.get_all_cards(limit=limit, offset=offset)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Ошибка получения карт: {str(e)}")
 
 @router.get("/", response_model=CardListResponse)
 async def get_all_cards(
@@ -35,8 +55,7 @@ async def get_all_cards(
         return await card_service.get_all_cards(limit=limit, offset=offset)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка получения карт: {str(e)}")
-
-
+    
 @router.get("/by-type/{card_type}", response_model=List[CardResponse])
 async def get_cards_by_type(
     card_type: CardType,

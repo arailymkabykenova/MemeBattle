@@ -8,7 +8,7 @@
 - **Azure Blob Storage** - хранение карточек-мемов
 - **Redis** - кэширование и сессии
 - **Celery** - фоновые задачи
-- **Game Center Auth** - аутентификация
+- **Device ID Auth** - аутентификация
 - **WebSocket** - реальное время для игровых комнат
 - **Docker** - контейнеризация
 - **Nginx** - reverse proxy
@@ -110,7 +110,7 @@ backend/
 ### 1. Аутентификация (auth_service.py)
 ```python
 # Функции для реализации:
-- authenticate_game_center() - аутентификация через Game Center
+- authenticate_device() - аутентификация через Device ID
 - complete_user_profile() - завершение создания профиля  
 - verify_token() - проверка токена
 - get_current_user() - получение текущего пользователя
@@ -198,7 +198,7 @@ backend/
 ### Модели PostgreSQL
 ```python
 # Основные таблицы:
-- users (id, game_center_player_id, nickname, birth_date, gender, rating, created_at)
+- users (id, device_id, nickname, birth_date, gender, rating, created_at)
 - cards (id, name, image_url, type, is_unique, created_at)
 - user_cards (user_id, card_id, obtained_at)
 - rooms (id, creator_id, max_players, status, created_at)

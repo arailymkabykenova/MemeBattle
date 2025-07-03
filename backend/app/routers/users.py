@@ -1,19 +1,20 @@
 """
-API роутер для работы с пользователями.
+Роутер пользователей.
+Обрабатывает операции с пользователями.
 """
 
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.database import get_db
 from ..services.user_service import UserService
-from ..schemas.user import UserCreate, UserUpdate, UserResponse, UserProfileResponse
+from ..schemas.user import UserCreate, UserUpdate, UserResponse, UserProfileResponse, UserProfileCreate
 from ..utils.exceptions import AppException, create_http_exception
 from ..core.dependencies import get_current_user
 from ..utils.exceptions import ValidationError, UserNotFoundError
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("/", response_model=List[dict])
@@ -68,51 +69,158 @@ async def check_nickname_availability(
 
 @router.post("/", response_model=UserResponse, status_code=201)
 async def create_user(
-    user_data: UserCreate, 
+    user_data: UserProfileCreate,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Создает нового пользователя.
+    Заполняет профиль текущего пользователя.
     
     Args:
-        user_data: Данные пользователя
+        user_data: Данные профиля пользователя
+        current_user: Текущий аутентифицированный пользователь
         db: Сессия базы данных
         
     Returns:
-        UserResponse: Созданный пользователь
+        UserResponse: Обновленный пользователь
     """
+    import traceback
     try:
         user_service = UserService(db)
-        user = await user_service.create_user_profile(user_data)
+        # Используем complete_profile вместо create_user_profile
+        user = await user_service.complete_user_profile(current_user.id, user_data)
         return user
-    except AppException as e:
-        raise create_http_exception(e)
+    except Exception as e:
+        print("EXCEPTION:", e)
+        traceback.print_exc()
+        raise
 
 
 # Специфичные роуты должны быть ВЫШЕ параметрических!
 
-@router.get("/my-cards", response_model=Dict[str, Any])  
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Получить текущего пользователя",
+    description="Возвращает информацию о текущем авторизованном пользователе"
+)
+async def get_me(
+    current_user: UserResponse = Depends(get_current_user)
+) -> UserResponse:
+    """
+    Получает текущего пользователя.
+    
+    Args:
+        current_user: Текущий пользователь из зависимости
+        
+    Returns:
+        UserResponse: Данные текущего пользователя
+    """
+    return current_user
+
+
+@router.put(
+    "/me",
+    response_model=UserResponse,
+    summary="Обновить профиль пользователя",
+    description="Обновляет профиль текущего пользователя"
+)
+async def update_profile(
+    profile_data: UserUpdate,
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> UserResponse:
+    """
+    Обновляет профиль пользователя.
+    
+    Args:
+        profile_data: Данные для обновления
+        current_user: Текущий пользователь
+        db: Сессия базы данных
+        
+    Returns:
+        UserResponse: Обновленные данные пользователя
+    """
+    try:
+        user_service = UserService(db)
+        user = await user_service.update_user_profile(current_user.id, profile_data)
+        return UserResponse.from_orm_with_age(user)
+        
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка обновления профиля: {str(e)}"
+        )
+
+
+@router.get(
+    "/me/cards",
+    summary="Получить карты пользователя",
+    description="Возвращает список карт текущего пользователя"
+)
 async def get_my_cards(
     current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Получает все карты текущего пользователя с изображениями из Azure.
+    Получает карты текущего пользователя.
     
-    🎯 Гибридный подход: связи из PostgreSQL + изображения из Azure
-    
-    Возвращает карты, сгруппированные по типам:
-    - **starter_cards**: стартовые карты
-    - **standard_cards**: обычные карты  
-    - **unique_cards**: уникальные карты
+    Args:
+        current_user: Текущий пользователь
+        db: Сессия базы данных
+        
+    Returns:
+        List: Список карт пользователя
     """
-    user_service = UserService(db)
     try:
-        return await user_service.get_user_cards(current_user.id)
-    except UserNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        user_service = UserService(db)
+        cards = await user_service.get_user_cards(current_user.id)
+        return {
+            "user_id": current_user.id,
+            "cards": cards,
+            "total": len(cards)
+        }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка получения карт: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения карт: {str(e)}"
+        )
+
+
+@router.get("/me/stats", summary="Получить статистику пользователя", description="Возвращает игровую статистику текущего пользователя")
+async def get_my_stats(
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получает статистику текущего пользователя.
+    
+    Args:
+        current_user: Текущий пользователь
+        db: Сессия базы данных
+        
+    Returns:
+        Dict: Статистика пользователя
+    """
+    try:
+        user_service = UserService(db)
+        stats = await user_service.get_user_stats(current_user.id)
+        return {
+            "user_id": current_user.id,
+            "stats": stats
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения статистики: {str(e)}"
+        )
 
 
 @router.get("/cards-for-game", response_model=List[Dict[str, Any]])
@@ -139,8 +247,145 @@ async def get_cards_for_game(
         raise HTTPException(status_code=500, detail=f"Ошибка получения карт для игры: {str(e)}")
 
 
-@router.get("/{user_id}", response_model=UserProfileResponse)
+@router.get(
+    "/{user_id}",
+    response_model=UserResponse,
+    summary="Получить пользователя по ID",
+    description="Возвращает информацию о пользователе по его ID"
+)
 async def get_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db)
+) -> UserResponse:
+    """
+    Получает пользователя по ID.
+    
+    Args:
+        user_id: ID пользователя
+        db: Сессия базы данных
+        
+    Returns:
+        UserResponse: Данные пользователя
+    """
+    try:
+        user_service = UserService(db)
+        user = await user_service.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Пользователь с ID {user_id} не найден"
+            )
+        return UserResponse.from_orm_with_age(user)
+        
+    except UserNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения пользователя: {str(e)}"
+        )
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Получить текущего пользователя",
+    description="Возвращает информацию о текущем авторизованном пользователе"
+)
+async def get_me(
+    current_user: UserResponse = Depends(get_current_user)
+) -> UserResponse:
+    """
+    Получает текущего пользователя.
+    
+    Args:
+        current_user: Текущий пользователь из зависимости
+        
+    Returns:
+        UserResponse: Данные текущего пользователя
+    """
+    return current_user
+
+
+@router.put(
+    "/me",
+    response_model=UserResponse,
+    summary="Обновить профиль пользователя",
+    description="Обновляет профиль текущего пользователя"
+)
+async def update_profile(
+    profile_data: UserUpdate,
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> UserResponse:
+    """
+    Обновляет профиль пользователя.
+    
+    Args:
+        profile_data: Данные для обновления
+        current_user: Текущий пользователь
+        db: Сессия базы данных
+        
+    Returns:
+        UserResponse: Обновленные данные пользователя
+    """
+    try:
+        user_service = UserService(db)
+        user = await user_service.update_user_profile(current_user.id, profile_data)
+        return UserResponse.from_orm_with_age(user)
+        
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка обновления профиля: {str(e)}"
+        )
+
+
+@router.get(
+    "/me/cards",
+    summary="Получить карты пользователя",
+    description="Возвращает список карт текущего пользователя"
+)
+async def get_my_cards(
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получает карты текущего пользователя.
+    
+    Args:
+        current_user: Текущий пользователь
+        db: Сессия базы данных
+        
+    Returns:
+        List: Список карт пользователя
+    """
+    try:
+        user_service = UserService(db)
+        cards = await user_service.get_user_cards(current_user.id)
+        return {
+            "user_id": current_user.id,
+            "cards": cards,
+            "total": len(cards)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения карт: {str(e)}"
+        )
+
+
+@router.get("/{user_id}", response_model=UserProfileResponse)
+async def get_user_profile(
     user_id: int, 
     db: AsyncSession = Depends(get_db)
 ):
@@ -157,31 +402,6 @@ async def get_user(
     try:
         user_service = UserService(db)
         user = await user_service.get_user_profile(user_id)
-        return user
-    except AppException as e:
-        raise create_http_exception(e)
-
-
-@router.get("/game-center/{player_id}", response_model=UserResponse)
-async def get_user_by_game_center_id(
-    player_id: str, 
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Получает пользователя по Game Center Player ID.
-    
-    Args:
-        player_id: Game Center Player ID
-        db: Сессия базы данных
-        
-    Returns:
-        UserResponse: Пользователь
-    """
-    try:
-        user_service = UserService(db)
-        user = await user_service.get_user_by_game_center_id(player_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="Пользователь не найден")
         return user
     except AppException as e:
         raise create_http_exception(e)

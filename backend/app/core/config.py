@@ -17,7 +17,7 @@ class Settings(BaseModel):
     
     # Основные настройки приложения
     app_name: str = "Meme Card Game API"
-    debug: bool = False
+    debug: bool = True  # Changed to True for development
     version: str = "1.0.0"
     
     # База данных (пока заглушка)
@@ -45,9 +45,9 @@ class Settings(BaseModel):
     azure_openai_api_version: str = "2024-02-15-preview"
     
     # JWT настройки (читаются из переменных окружения)
-    JWT_SECRET_KEY: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_HOURS: int = 168  # 7 дней
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_hours: int = 168  # 7 дней
     
     # CORS настройки
     cors_origins: list[str] = ["*"]  # В продакшене указать конкретные домены
@@ -70,7 +70,7 @@ def load_settings() -> Settings:
     
     return Settings(
         app_name=os.getenv("APP_NAME", "Meme Card Game API"),
-        debug=os.getenv("DEBUG", "false").lower() == "true",
+        debug=os.getenv("DEBUG", "true").lower() == "true",
         version=os.getenv("VERSION", "1.0.0"),
         database_url=database_url,
         redis_url=os.getenv("REDIS_URL"),
@@ -85,9 +85,9 @@ def load_settings() -> Settings:
         azure_openai_key=os.getenv("AZURE_OPENAI_KEY"),
         azure_openai_deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
         azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
-        JWT_SECRET_KEY=jwt_secret,
-        JWT_ALGORITHM=os.getenv("JWT_ALGORITHM", "HS256"),
-        JWT_EXPIRATION_HOURS=int(os.getenv("JWT_EXPIRATION_HOURS", "168")),
+        jwt_secret_key=jwt_secret,
+        jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
+        jwt_expiration_hours=int(os.getenv("JWT_EXPIRATION_HOURS", "168")),
         cors_origins=os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") != "*" else ["*"]
     )
 
