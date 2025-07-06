@@ -9,131 +9,99 @@ import Foundation
 import Combine
 
 @MainActor
-class ProfileSetupViewModel: BaseViewModel {
+class ProfileViewModel: ObservableObject {
     private let authRepository: AuthRepositoryProtocol
     
     @Published var nickname = ""
-    @Published var birthDate = Calendar.current.date(byAdding: .year, value: -18, to: Date()) ?? Date()
-    @Published var gender = Gender.male
+    @Published var birthDate = Date()
+    @Published var selectedGender: Gender = .other
+    @Published var isLoading = false
+    @Published var showError = false
+    @Published var errorMessage: String?
+    @Published var nicknameError: String?
+    @Published var isProfileComplete = false
     
-    @Published var nicknameError = ""
-    @Published var birthDateError = ""
-    @Published var genderError = ""
-    
-    @Published var profileSaved = false
+    private var cancellables = Set<AnyCancellable>()
     
     init(authRepository: AuthRepositoryProtocol = AuthRepository()) {
         self.authRepository = authRepository
-        super.init()
-        
-        // Validate form on changes
-        setupValidation()
-    }
-    
-    // MARK: - Form Validation
-    
-    private func setupValidation() {
-        // Nickname validation
-        addCancellable(
-            $nickname
-                .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
-                .eraseToAnyPublisher()
-        ) { [weak self] nickname in
-            self?.validateNicknameField(nickname)
-        }
-        
-        // Birth date validation
-        addCancellable($birthDate.eraseToAnyPublisher()) { [weak self] date in
-            self?.validateBirthDate(date)
-        }
-        
-        // Gender validation
-        addCancellable($gender.eraseToAnyPublisher()) { [weak self] _ in
-            self?.validateGender()
-        }
-    }
-    
-    private func validateNicknameField(_ nickname: String) {
-        let trimmed = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        if trimmed.isEmpty {
-            nicknameError = "Никнейм не может быть пустым"
-        } else if trimmed.count < 3 {
-            nicknameError = "Никнейм должен содержать минимум 3 символа"
-        } else if trimmed.count > 20 {
-            nicknameError = "Никнейм не может быть длиннее 20 символов"
-        } else if !trimmed.matches(pattern: "^[a-zA-Zа-яА-Я0-9_]+$") {
-            nicknameError = "Никнейм может содержать только буквы, цифры и знак подчеркивания"
-        } else {
-            nicknameError = ""
-        }
-    }
-    
-    private func validateBirthDate(_ date: Date) {
-        let calendar = Calendar.current
-        let ageComponents = calendar.dateComponents([.year], from: date, to: Date())
-        let age = ageComponents.year ?? 0
-        
-        if age < 13 {
-            birthDateError = "Вам должно быть не менее 13 лет"
-        } else if age > 100 {
-            birthDateError = "Пожалуйста, укажите корректную дату рождения"
-        } else {
-            birthDateError = ""
-        }
-    }
-    
-    private func validateGender() {
-        genderError = ""
-    }
-    
-    // MARK: - Form State
-    
-    var isFormValid: Bool {
-        return nicknameError.isEmpty && 
-               birthDateError.isEmpty && 
-               genderError.isEmpty &&
-               !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     
     // MARK: - Profile Management
     
-    func saveProfile() async {
+    func completeProfile() async {
         guard isFormValid else { return }
         
-        let profile = UserProfileCreate(
-            nickname: nickname.trimmingCharacters(in: .whitespacesAndNewlines),
-            birth_date: birthDate,
-            gender: gender
-        )
+        isLoading = true
+        showError = false
+        nicknameError = nil
         
-        let result = await performAsyncTask {
-            try await self.authRepository.completeProfile(profile: profile)
+        do {
+            let request = UserProfileCreate(
+                nickname: nickname.trimmingCharacters(in: .whitespacesAndNewlines),
+                birth_date: birthDate,
+                gender: selectedGender
+            )
+            
+            let user = try await authRepository.completeProfile(request: request)
+            isProfileComplete = true
+            
+        } catch {
+            handleError(error)
         }
         
-        if result != nil {
-            profileSaved = true
+        isLoading = false
+    }
+    
+    func checkProfileStatus() async {
+        do {
+            let user = try await authRepository.getCurrentUser()
+            isProfileComplete = user.is_profile_complete
+            
+            if isProfileComplete {
+                nickname = user.nickname ?? ""
+                birthDate = user.birth_date ?? Date()
+                selectedGender = user.gender ?? .other
+            }
+        } catch {
+            handleError(error)
         }
     }
     
-    // MARK: - Helper Methods
+    // MARK: - Validation
     
-    func resetForm() {
-        nickname = ""
-        birthDate = Calendar.current.date(byAdding: .year, value: -18, to: Date()) ?? Date()
-        gender = Gender.male
-        nicknameError = ""
-        birthDateError = ""
-        genderError = ""
-        profileSaved = false
-        clearError()
+    var isFormValid: Bool {
+        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmedNickname.isEmpty && 
+               trimmedNickname.count >= 3 && 
+               trimmedNickname.count <= 20 &&
+               isValidNickname(trimmedNickname)
     }
-}
-
-// MARK: - String Extension for Validation
-
-extension String {
-    func matches(pattern: String) -> Bool {
-        return self.range(of: pattern, options: .regularExpression) != nil
+    
+    private func isValidNickname(_ nickname: String) -> Bool {
+        // Only alphanumeric characters, underscores, and hyphens
+        let nicknameRegex = "^[a-zA-Z0-9_-]+$"
+        return nickname.range(of: nicknameRegex, options: .regularExpression) != nil
+    }
+    
+    // MARK: - Private Methods
+    
+    private func handleError(_ error: Error) {
+        showError = true
+        
+        if let networkError = error as? NetworkError {
+            switch networkError {
+            case .validationError(let message):
+                if message.contains("nickname") {
+                    nicknameError = "Никнейм уже занят или недопустим"
+                } else {
+                    errorMessage = message
+                }
+            default:
+                errorMessage = networkError.localizedDescription
+            }
+        } else {
+            errorMessage = error.localizedDescription
+        }
     }
 } 

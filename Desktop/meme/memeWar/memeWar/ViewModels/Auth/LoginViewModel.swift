@@ -104,10 +104,7 @@ class LoginViewModel: BaseViewModel {
         return currentUser?.displayName ?? "Гость"
     }
     
-    var userRating: String {
-        guard let user = currentUser else { return "0.0" }
-        return formatRating(user.rating)
-    }
+
     
     var userAge: String {
         return currentUser?.ageDisplay ?? "Не указан"

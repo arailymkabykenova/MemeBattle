@@ -7,9 +7,9 @@
 
 import Foundation
 
-// MARK: - Room Status
+// MARK: - Room Status Enum
 
-enum RoomStatus: String, Codable, CaseIterable {
+enum RoomStatus: String, Codable {
     case waiting = "waiting"
     case playing = "playing"
     case finished = "finished"
@@ -37,7 +37,7 @@ enum RoomStatus: String, Codable, CaseIterable {
     }
 }
 
-// MARK: - Room Models
+// MARK: - Room Response
 
 struct RoomResponse: Codable, Identifiable {
     let id: Int
@@ -49,7 +49,10 @@ struct RoomResponse: Codable, Identifiable {
     let age_group: String?
     let created_at: Date
     let current_players: Int
+    let creator_nickname: String?
 }
+
+// MARK: - Room Detail Response
 
 struct RoomDetailResponse: Codable {
     let room: RoomResponse
@@ -57,6 +60,8 @@ struct RoomDetailResponse: Codable {
     let creator_nickname: String
     let can_start_game: Bool
 }
+
+// MARK: - Room Participant Response
 
 struct RoomParticipantResponse: Codable, Identifiable {
     let id: Int
@@ -67,13 +72,35 @@ struct RoomParticipantResponse: Codable, Identifiable {
     let status: String
 }
 
-// MARK: - Room Creation
+// MARK: - Create Room Request
 
 struct CreateRoomRequest: Codable {
     let max_players: Int
     let is_public: Bool
-    let age_group: String?
+    let generate_code: Bool
 }
+
+// MARK: - Join Room By Code Request
+
+struct JoinRoomByCodeRequest: Codable {
+    let room_code: String
+}
+
+// MARK: - Quick Match Request
+
+struct QuickMatchRequest: Codable {
+    let preferred_players: Int
+    let max_wait_time: Int
+}
+
+// MARK: - Quick Match Response
+
+struct QuickMatchResponse: Codable {
+    let room: RoomResponse
+    let wait_time: Int
+}
+
+// MARK: - Room Creation
 
 struct CreateRoomResponse: Codable {
     let room: RoomResponse
@@ -87,26 +114,9 @@ struct JoinRoomRequest: Codable {
     let room_id: Int
 }
 
-struct JoinByCodeRequest: Codable {
-    let room_code: String
-}
-
 struct JoinRoomResponse: Codable {
     let room: RoomDetailResponse
     let message: String
-}
-
-// MARK: - Quick Match
-
-struct QuickMatchRequest: Codable {
-    let max_players: Int?
-    let age_group: String?
-}
-
-struct QuickMatchResponse: Codable {
-    let room: RoomResponse?
-    let message: String
-    let found_room: Bool
 }
 
 // MARK: - Room Management

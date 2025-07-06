@@ -6,85 +6,93 @@
 //
 
 import Foundation
-import Combine
+import Security
 
-class TokenManager: ObservableObject {
+protocol TokenManagerProtocol {
+    func saveToken(_ token: String)
+    func getToken() -> String?
+    func clearToken()
+    func hasToken() -> Bool
+}
+
+class TokenManager: TokenManagerProtocol {
     static let shared = TokenManager()
     
     private let keychainManager = KeychainManager.shared
-    private let service = AppConstants.keychainService
-    private let account = AppConstants.keychainAccount
+    private let tokenKey = "access_token"
     
-    @Published var isAuthenticated = false
-    @Published var currentToken: String?
-    
-    private init() {
-        loadTokenFromKeychain()
-    }
+    private init() {}
     
     // MARK: - Token Management
     
     func saveToken(_ token: String) {
-        do {
-            try keychainManager.saveString(token, service: service, account: account)
-            currentToken = token
-            isAuthenticated = true
-        } catch {
-            print("Error saving token: \(error)")
-        }
+        keychainManager.save(key: tokenKey, data: token)
     }
     
     func getToken() -> String? {
-        return currentToken
+        return keychainManager.load(key: tokenKey)
     }
     
     func clearToken() {
-        do {
-            try keychainManager.delete(service: service, account: account)
-            currentToken = nil
-            isAuthenticated = false
-        } catch {
-            print("Error clearing token: \(error)")
-        }
+        keychainManager.delete(key: tokenKey)
     }
     
-    func updateToken(_ token: String) {
-        do {
-            try keychainManager.saveString(token, service: service, account: account)
-            currentToken = token
-            isAuthenticated = true
-        } catch {
-            print("Error updating token: \(error)")
-        }
+    func hasToken() -> Bool {
+        return getToken() != nil
+    }
+}
+
+// MARK: - Keychain Manager
+
+class KeychainManager {
+    static let shared = KeychainManager()
+    
+    private let service = "com.memewar.app"
+    
+    private init() {}
+    
+    func save(key: String, data: String) {
+        guard let data = data.data(using: .utf8) else { return }
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data
+        ]
+        
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
     }
     
-    // MARK: - Private Methods
-    
-    private func loadTokenFromKeychain() {
-        do {
-            let token = try keychainManager.retrieveString(service: service, account: account)
-            currentToken = token
-            isAuthenticated = true
-        } catch {
-            currentToken = nil
-            isAuthenticated = false
-        }
-    }
-    
-    // MARK: - Validation
-    
-    func isTokenValid() -> Bool {
-        guard let token = currentToken, !token.isEmpty else {
-            return false
+    func load(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let string = String(data: data, encoding: .utf8) else {
+            return nil
         }
         
-        // Здесь можно добавить дополнительную валидацию токена
-        // например, проверку JWT expiration
-        return true
+        return string
     }
     
-    func refreshTokenIfNeeded() async {
-        // Здесь можно добавить логику обновления токена
-        // если он истек
+    func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        
+        SecItemDelete(query as CFDictionary)
     }
 } 

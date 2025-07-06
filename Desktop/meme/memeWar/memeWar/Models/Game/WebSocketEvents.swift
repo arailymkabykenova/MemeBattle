@@ -7,7 +7,7 @@
 
 import Foundation
 
-// MARK: - WebSocket Message Structure
+// MARK: - WebSocket Message
 
 struct WebSocketMessage: Codable {
     let action: String
@@ -46,7 +46,7 @@ struct WebSocketMessage: Codable {
     }
 }
 
-// MARK: - WebSocket Actions (Client to Server)
+// MARK: - WebSocket Actions
 
 enum WebSocketAction: String, CaseIterable {
     case ping = "ping"
@@ -56,17 +56,13 @@ enum WebSocketAction: String, CaseIterable {
     case startRound = "start_round"
     case submitCardChoice = "submit_card_choice"
     case submitVote = "submit_vote"
+    case startVoting = "start_voting"
     case getGameState = "get_game_state"
     case getRoundCards = "get_round_cards"
     case getChoicesForVoting = "get_choices_for_voting"
-    case startVoting = "start_voting"
-    case endGame = "end_game"
-    case getPlayersStatus = "get_players_status"
-    case checkTimeouts = "check_timeouts"
-    case getActionStatus = "get_action_status"
 }
 
-// MARK: - WebSocket Events (Server to Client)
+// MARK: - WebSocket Event Types
 
 enum WebSocketEventType: String, Codable {
     case pong = "pong"
@@ -80,11 +76,9 @@ enum WebSocketEventType: String, Codable {
     case playerLeft = "player_left"
     case timeoutWarning = "timeout_warning"
     case playerTimeout = "player_timeout"
-    case cardChoiceSubmitted = "card_choice_submitted"
-    case voteSubmitted = "vote_submitted"
-    case gameStateUpdate = "game_state_update"
-    case error = "error"
 }
+
+// MARK: - WebSocket Event
 
 struct WebSocketEvent: Codable {
     let type: WebSocketEventType
@@ -97,10 +91,10 @@ struct WebSocketEvent: Codable {
         case timestamp
     }
     
-    init(type: WebSocketEventType, data: [String: Any] = [:], timestamp: String = ISO8601DateFormatter().string(from: Date())) {
+    init(type: WebSocketEventType, data: [String: Any] = [:]) {
         self.type = type
         self.data = data
-        self.timestamp = timestamp
+        self.timestamp = ISO8601DateFormatter().string(from: Date())
     }
     
     init(from decoder: Decoder) throws {
@@ -127,6 +121,91 @@ struct WebSocketEvent: Codable {
         try container.encode(jsonData, forKey: .data)
         
         try container.encode(timestamp, forKey: .timestamp)
+    }
+}
+
+// MARK: - WebSocket Message Extensions
+
+extension WebSocketMessage {
+    static func ping() -> WebSocketMessage {
+        return WebSocketMessage(action: WebSocketAction.ping.rawValue)
+    }
+    
+    static func joinRoom(roomId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.joinRoom.rawValue,
+            data: ["room_id": roomId]
+        )
+    }
+    
+    static func leaveRoom(roomId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.leaveRoom.rawValue,
+            data: ["room_id": roomId]
+        )
+    }
+    
+    static func startGame(roomId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.startGame.rawValue,
+            data: ["room_id": roomId]
+        )
+    }
+    
+    static func roundStarted(roundId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.startRound.rawValue,
+            data: ["round_id": roundId]
+        )
+    }
+    
+    static func submitCardChoice(roundId: Int, cardId: String, isAnonymous: Bool) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.submitCardChoice.rawValue,
+            data: [
+                "round_id": roundId,
+                "card_id": cardId,
+                "is_anonymous": isAnonymous
+            ]
+        )
+    }
+    
+    static func submitVote(roundId: Int, votedForUserId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.submitVote.rawValue,
+            data: [
+                "round_id": roundId,
+                "voted_for_user_id": votedForUserId
+            ]
+        )
+    }
+    
+    static func startVoting(roundId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.startVoting.rawValue,
+            data: ["round_id": roundId]
+        )
+    }
+    
+    static func getGameState(roomId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.getGameState.rawValue,
+            data: ["room_id": roomId]
+        )
+    }
+    
+    static func getRoundCards(roundId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.getRoundCards.rawValue,
+            data: ["round_id": roundId]
+        )
+    }
+    
+    static func getChoicesForVoting(roundId: Int) -> WebSocketMessage {
+        return WebSocketMessage(
+            action: WebSocketAction.getChoicesForVoting.rawValue,
+            data: ["round_id": roundId]
+        )
     }
 }
 
@@ -237,64 +316,4 @@ struct WebSocketStats: Codable {
     let average_latency: TimeInterval
 }
 
-// MARK: - WebSocket Message Builders
-
-extension WebSocketMessage {
-    static func ping() -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.ping.rawValue)
-    }
-    
-    static func joinRoom(roomId: Int) -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.joinRoom.rawValue, data: ["room_id": roomId])
-    }
-    
-    static func leaveRoom(roomId: Int) -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.leaveRoom.rawValue, data: ["room_id": roomId])
-    }
-    
-    static func startGame(roomId: Int) -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.startGame.rawValue, data: ["room_id": roomId])
-    }
-    
-    static func submitCardChoice(roundId: Int, cardId: String, isAnonymous: Bool) -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.submitCardChoice.rawValue, data: [
-            "round_id": roundId,
-            "card_id": cardId,
-            "is_anonymous": isAnonymous
-        ])
-    }
-    
-    static func submitVote(roundId: Int, votedForUserId: Int) -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.submitVote.rawValue, data: [
-            "round_id": roundId,
-            "voted_for_user_id": votedForUserId
-        ])
-    }
-    
-    static func startVoting(roundId: Int) -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.startVoting.rawValue, data: ["round_id": roundId])
-    }
-    
-    static func getGameState(roomId: Int) -> WebSocketMessage {
-        return WebSocketMessage(action: WebSocketAction.getGameState.rawValue, data: ["room_id": roomId])
-    }
-}
-
-// MARK: - Notification Names for WebSocket Events
-
-extension Notification.Name {
-    static let roomStateChanged = Notification.Name("roomStateChanged")
-    static let gameStarted = Notification.Name("gameStarted")
-    static let roundStarted = Notification.Name("roundStarted")
-    static let votingStarted = Notification.Name("votingStarted")
-    static let roundEnded = Notification.Name("roundEnded")
-    static let gameEnded = Notification.Name("gameEnded")
-    static let playerJoined = Notification.Name("playerJoined")
-    static let playerLeft = Notification.Name("playerLeft")
-    static let timeoutWarning = Notification.Name("timeoutWarning")
-    static let playerTimeout = Notification.Name("playerTimeout")
-    static let cardChoiceSubmitted = Notification.Name("cardChoiceSubmitted")
-    static let voteSubmitted = Notification.Name("voteSubmitted")
-    static let gameStateUpdate = Notification.Name("gameStateUpdate")
-    static let websocketError = Notification.Name("websocketError")
-} 
+ 

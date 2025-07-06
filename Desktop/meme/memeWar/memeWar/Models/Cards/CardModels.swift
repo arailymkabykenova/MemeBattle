@@ -7,15 +7,18 @@
 
 import Foundation
 
-// MARK: - Card Types
+// MARK: - Card Type Enum
 
 enum CardType: String, Codable, CaseIterable {
+    case all = "all"
     case starter = "starter"
     case standard = "standard"
     case unique = "unique"
     
     var displayName: String {
         switch self {
+        case .all:
+            return "Все"
         case .starter:
             return "Стартовые"
         case .standard:
@@ -37,7 +40,7 @@ enum CardType: String, Codable, CaseIterable {
     }
 }
 
-// MARK: - Card Models
+// MARK: - Card Response
 
 struct CardResponse: Codable, Identifiable {
     let id: String
@@ -51,6 +54,8 @@ struct CardResponse: Codable, Identifiable {
     let is_standard_card: Bool
     let is_unique_card: Bool
 }
+
+// MARK: - My Cards Response
 
 struct MyCardsResponse: Codable {
     let cards: [CardResponse]

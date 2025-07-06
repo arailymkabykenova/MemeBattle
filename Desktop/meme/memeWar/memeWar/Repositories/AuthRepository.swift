@@ -10,22 +10,32 @@ import Combine
 
 protocol AuthRepositoryProtocol {
     func deviceAuth(deviceId: String) async throws -> AuthResponse
-    func completeProfile(profile: UserProfileCreate) async throws -> UserResponse
+    func completeProfile(request: UserProfileCreate) async throws -> UserResponse
     func getCurrentUser() async throws -> UserResponse
-    func logout() async throws -> LogoutResponse
+    func logout() async throws
+    func completeProfileRaw<T: Codable>(profile: T) async throws -> UserResponse
 }
 
 class AuthRepository: AuthRepositoryProtocol {
-    private let networkManager = NetworkManager.shared
-    private let tokenManager = TokenManager.shared
+    private let networkManager: NetworkManagerProtocol
+    private let tokenManager: TokenManagerProtocol
+    
+    init(networkManager: NetworkManagerProtocol = NetworkManager.shared,
+         tokenManager: TokenManagerProtocol = TokenManager.shared) {
+        self.networkManager = networkManager
+        self.tokenManager = tokenManager
+    }
     
     // MARK: - Device Authentication
     
     func deviceAuth(deviceId: String) async throws -> AuthResponse {
         let request = DeviceAuthRequest(device_id: deviceId)
-        let response: AuthResponse = try await networkManager.post(APIConstants.Endpoints.deviceAuth, body: request)
+        let response: AuthResponse = try await networkManager.post(
+            endpoint: APIConstants.Endpoints.deviceAuth,
+            body: request
+        )
         
-        // Save token after successful authentication
+        // Save token
         tokenManager.saveToken(response.access_token)
         
         return response
@@ -33,25 +43,43 @@ class AuthRepository: AuthRepositoryProtocol {
     
     // MARK: - Profile Management
     
-    func completeProfile(profile: UserProfileCreate) async throws -> UserResponse {
-        let response: UserResponse = try await networkManager.post(APIConstants.Endpoints.completeProfile, body: profile)
+    func completeProfile(request: UserProfileCreate) async throws -> UserResponse {
+        let response: UserResponse = try await networkManager.post(
+            endpoint: APIConstants.Endpoints.completeProfile,
+            body: request
+        )
+        
         return response
     }
     
     func getCurrentUser() async throws -> UserResponse {
-        let response: UserResponse = try await networkManager.get(APIConstants.Endpoints.me)
+        let response: UserResponse = try await networkManager.get(
+            endpoint: APIConstants.Endpoints.me
+        )
+        
+        return response
+    }
+    
+    func completeProfileRaw<T: Codable>(profile: T) async throws -> UserResponse {
+        // Convert the generic Codable type to Data first, then post
+        let data = try JSONEncoder().encode(profile)
+        let response: UserResponse = try await networkManager.post(
+            endpoint: APIConstants.Endpoints.completeProfile,
+            body: data
+        )
         return response
     }
     
     // MARK: - Logout
     
-    func logout() async throws -> LogoutResponse {
-        let response: LogoutResponse = try await networkManager.post(APIConstants.Endpoints.logout, body: EmptyRequest())
+    func logout() async throws {
+        try await networkManager.post(
+            endpoint: APIConstants.Endpoints.logout,
+            body: EmptyRequest()
+        )
         
-        // Clear token after successful logout
+        // Clear token
         tokenManager.clearToken()
-        
-        return response
     }
 }
 
@@ -77,7 +105,6 @@ class MockAuthRepository: AuthRepositoryProtocol {
                     nickname: "TestUser",
                     birth_date: Date(),
                     gender: .male,
-                    rating: 1000.0,
                     created_at: Date(),
                     age: 25,
                     is_profile_complete: true
@@ -89,21 +116,20 @@ class MockAuthRepository: AuthRepositoryProtocol {
         }
     }
     
-    func completeProfile(profile: UserProfileCreate) async throws -> UserResponse {
+    func completeProfile(request: UserProfileCreate) async throws -> UserResponse {
         if shouldSucceed {
             return mockUser ?? UserResponse(
                 id: 1,
                 device_id: "mock_device",
-                nickname: profile.nickname,
-                birth_date: profile.birth_date,
-                gender: profile.gender,
-                rating: 1000.0,
+                nickname: request.nickname,
+                birth_date: request.birth_date,
+                gender: request.gender,
                 created_at: Date(),
-                age: Calendar.current.dateComponents([.year], from: profile.birth_date, to: Date()).year,
+                age: Calendar.current.dateComponents([.year], from: request.birth_date, to: Date()).year,
                 is_profile_complete: true
             )
         } else {
-            throw NetworkError.serverError(500)
+            throw NetworkError.serverError
         }
     }
     
@@ -115,7 +141,6 @@ class MockAuthRepository: AuthRepositoryProtocol {
                 nickname: "TestUser",
                 birth_date: Date(),
                 gender: .male,
-                rating: 1000.0,
                 created_at: Date(),
                 age: 25,
                 is_profile_complete: true
@@ -125,11 +150,28 @@ class MockAuthRepository: AuthRepositoryProtocol {
         }
     }
     
-    func logout() async throws -> LogoutResponse {
+    func logout() async throws {
         if shouldSucceed {
-            return LogoutResponse(message: "Successfully logged out")
+            // Mock logout success
         } else {
-            throw NetworkError.serverError(500)
+            throw NetworkError.serverError
+        }
+    }
+    
+    func completeProfileRaw<T: Codable>(profile: T) async throws -> UserResponse {
+        if shouldSucceed {
+            return mockUser ?? UserResponse(
+                id: 1,
+                device_id: "mock_device",
+                nickname: "TestUser",
+                birth_date: Date(),
+                gender: .male,
+                created_at: Date(),
+                age: 25,
+                is_profile_complete: true
+            )
+        } else {
+            throw NetworkError.serverError
         }
     }
 } 

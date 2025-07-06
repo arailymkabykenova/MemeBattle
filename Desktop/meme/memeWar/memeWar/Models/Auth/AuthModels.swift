@@ -7,7 +7,7 @@
 
 import Foundation
 
-// MARK: - Auth Response Models
+// MARK: - Auth Response
 
 struct AuthResponse: Codable {
     let access_token: String
@@ -15,6 +15,8 @@ struct AuthResponse: Codable {
     let user: UserResponse
     let is_new_user: Bool
 }
+
+// MARK: - Device Auth Request
 
 struct DeviceAuthRequest: Codable {
     let device_id: String

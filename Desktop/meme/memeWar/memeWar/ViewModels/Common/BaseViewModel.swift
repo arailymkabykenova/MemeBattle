@@ -11,21 +11,22 @@ import Combine
 @MainActor
 class BaseViewModel: ObservableObject {
     @Published var isLoading = false
-    @Published var errorMessage: String?
     @Published var showError = false
+    @Published var errorMessage: String?
     
     private var cancellables = Set<AnyCancellable>()
     
+    // MARK: - Loading State
+    
+    func setLoading(_ loading: Bool) {
+        isLoading = loading
+    }
+    
     // MARK: - Error Handling
     
-    func handleError(_ error: Error) {
-        if let networkError = error as? NetworkError {
-            errorMessage = networkError.errorDescription
-        } else {
-            errorMessage = error.localizedDescription
-        }
-        showError = true
-        isLoading = false
+    func setError(_ message: String?) {
+        errorMessage = message
+        showError = message != nil
     }
     
     func clearError() {
@@ -33,36 +34,23 @@ class BaseViewModel: ObservableObject {
         showError = false
     }
     
-    // MARK: - Loading State
-    
-    func setLoading(_ loading: Bool) {
-        isLoading = loading
-        if loading {
-            clearError()
-        }
-    }
-    
-    // MARK: - Async Task Wrapper
+    // MARK: - Async Task Helper
     
     func performAsyncTask<T>(_ task: @escaping () async throws -> T) async -> T? {
-        setLoading(true)
-        
         do {
-            let result = try await task()
-            setLoading(false)
-            return result
+            return try await task()
         } catch {
-            handleError(error)
+            setError(error.localizedDescription)
             return nil
         }
     }
     
     // MARK: - Combine Helpers
     
-    func addCancellable<T>(_ publisher: AnyPublisher<T, Never>, receiveValue: @escaping (T) -> Void) {
+    func addCancellable<T: Publisher>(_ publisher: T, action: @escaping (T.Output) -> Void) {
         publisher
             .receive(on: DispatchQueue.main)
-            .sink(receiveValue: receiveValue)
+            .sink(receiveCompletion: { _ in }, receiveValue: action)
             .store(in: &cancellables)
     }
     
@@ -90,23 +78,13 @@ class BaseViewModel: ObservableObject {
         return formatter.string(from: date)
     }
     
-    func formatRating(_ rating: Double) -> String {
-        return String(format: "%.1f", rating)
-    }
-    
     func formatPercentage(_ value: Double) -> String {
         return String(format: "%.1f%%", value * 100)
     }
     
     // MARK: - Cleanup
     
-    func cleanup() {
-        cancellables.removeAll()
-    }
-    
     deinit {
-        Task { @MainActor in
-            cleanup()
-        }
+        cancellables.removeAll()
     }
 } 

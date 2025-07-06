@@ -17,33 +17,33 @@ struct ErrorView: View {
     }
     
     var body: some View {
-        VStack(spacing: AppConstants.padding) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 50))
+        VStack(spacing: AppConstants.largePadding) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 60))
                 .foregroundColor(.orange)
             
             Text("Произошла ошибка")
                 .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
+                .fontWeight(.bold)
+                .multilineTextAlignment(.center)
             
             Text(error)
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, AppConstants.padding)
+                .padding(.horizontal, AppConstants.largePadding)
             
             if let retryAction = retryAction {
                 Button(action: retryAction) {
                     HStack {
                         Image(systemName: "arrow.clockwise")
-                        Text("Попробовать снова")
+                        Text("Повторить")
+                            .fontWeight(.medium)
                     }
                     .font(.body)
-                    .fontWeight(.medium)
                     .foregroundColor(.white)
                     .padding(.horizontal, AppConstants.largePadding)
-                    .padding(.vertical, AppConstants.smallPadding)
+                    .padding(.vertical, AppConstants.padding)
                     .background(
                         RoundedRectangle(cornerRadius: AppConstants.cornerRadius)
                             .fill(Color.accentColor)
@@ -123,10 +123,7 @@ extension View {
 }
 
 #Preview {
-    VStack(spacing: 20) {
-        ErrorView("Не удалось загрузить данные", retryAction: {})
-        
-        ErrorBanner(error: "Ошибка сети", dismissAction: {})
-            .padding()
+    ErrorView("Не удалось загрузить данные") {
+        print("Retry tapped")
     }
 } 

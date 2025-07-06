@@ -6,12 +6,36 @@
 //
 
 import Foundation
+import SwiftUI
+
+// MARK: - App Constants
+
+struct AppConstants {
+    // Padding
+    static let smallPadding: CGFloat = 8
+    static let padding: CGFloat = 16
+    static let largePadding: CGFloat = 24
+    
+    // Corner Radius
+    static let smallCornerRadius: CGFloat = 8
+    static let cornerRadius: CGFloat = 12
+    static let largeCornerRadius: CGFloat = 16
+    
+    // Animation
+    static let defaultAnimation: Animation = .easeInOut(duration: 0.3)
+    static let fastAnimation: Animation = .easeInOut(duration: 0.15)
+    
+    // Timeouts
+    static let networkTimeout: TimeInterval = 30
+    static let websocketTimeout: TimeInterval = 10
+}
+
+// MARK: - API Constants
 
 struct APIConstants {
-    static let baseURL = "http://localhost:8000"  // Development
-    static let wsBaseURL = "ws://localhost:8000"  // Development
+    static let baseURL = "http://localhost:8000"
+    static let wsBaseURL = "ws://localhost:8000"
     
-    // Endpoints
     struct Endpoints {
         // Auth
         static let deviceAuth = "/auth/device"
@@ -77,31 +101,21 @@ struct APIConstants {
     }
 }
 
-struct AppConstants {
-    static let appName = "Meme War"
-    static let appVersion = "1.0.0"
-    static let buildNumber = "1"
+// MARK: - Color Extensions
+
+extension Color {
+    static let customBackground = Color(.systemBackground)
+    static let customSecondaryBackground = Color(.secondarySystemBackground)
+    static let customTertiaryBackground = Color(.tertiarySystemBackground)
     
-    // Keychain
-    static let keychainService = "com.memewar.app"
-    static let keychainAccount = "access_token"
+    static let customLabel = Color(.label)
+    static let customSecondaryLabel = Color(.secondaryLabel)
+    static let customTertiaryLabel = Color(.tertiaryLabel)
     
-    // UserDefaults
-    static let userDefaultsSuite = "com.memewar.app"
-    
-    // Cache
-    static let imageCacheSize = 100 * 1024 * 1024 // 100 MB
-    static let cacheExpirationTime: TimeInterval = 24 * 60 * 60 // 24 hours
-    
-    // Game
-    static let maxPlayersPerRoom = 8
-    static let minPlayersToStart = 2
-    static let roundTimeLimit: TimeInterval = 60 // 60 seconds
-    static let votingTimeLimit: TimeInterval = 30 // 30 seconds
-    
-    // UI
-    static let cornerRadius: CGFloat = 12
-    static let padding: CGFloat = 16
-    static let smallPadding: CGFloat = 8
-    static let largePadding: CGFloat = 24
+    static let customSystemGray = Color(.systemGray)
+    static let customSystemGray2 = Color(.systemGray2)
+    static let customSystemGray3 = Color(.systemGray3)
+    static let customSystemGray4 = Color(.systemGray4)
+    static let customSystemGray5 = Color(.systemGray5)
+    static let customSystemGray6 = Color(.systemGray6)
 } 

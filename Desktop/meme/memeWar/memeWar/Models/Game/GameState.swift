@@ -7,289 +7,216 @@
 
 import Foundation
 
-// Import CardResponse from CardModels
-// This will be resolved when CardModels.swift is compiled
-
-// MARK: - Game Status
-
-enum GameStatus: String, Codable, CaseIterable {
-    case waiting = "waiting"
-    case playing = "playing"
-    case voting = "voting"
-    case finished = "finished"
-    
-    var displayName: String {
-        switch self {
-        case .waiting:
-            return "Ожидание"
-        case .playing:
-            return "Игра"
-        case .voting:
-            return "Голосование"
-        case .finished:
-            return "Завершена"
-        }
-    }
-}
-
-// MARK: - Round Status
-
-enum RoundStatus: String, Codable, CaseIterable {
-    case waiting = "waiting"
-    case choosing = "choosing"
-    case voting = "voting"
-    case finished = "finished"
-    
-    var displayName: String {
-        switch self {
-        case .waiting:
-            return "Ожидание"
-        case .choosing:
-            return "Выбор карты"
-        case .voting:
-            return "Голосование"
-        case .finished:
-            return "Завершен"
-        }
-    }
-}
-
-// MARK: - Game Models
-
-struct GameResponse: Codable, Identifiable {
-    let id: Int
-    let room_id: Int
-    let status: GameStatus
-    let current_round: Int?
-    let total_rounds: Int
-    let created_at: Date
-    let started_at: Date?
-    let finished_at: Date?
-    let winner_id: Int?
-    let winner_nickname: String?
-}
-
-struct GameDetailResponse: Codable {
-    let game: GameResponse
-    let players: [GamePlayerResponse]
-    let current_round: RoundResponse?
-    let rounds: [RoundResponse]
-    let winner: GamePlayerResponse?
-}
-
-struct GamePlayerResponse: Codable, Identifiable {
-    let id: Int
-    let user_id: Int
-    let nickname: String
-    let score: Int
-    let cards_played: Int
-    let votes_received: Int
-    let is_winner: Bool
-    let joined_at: Date
-}
-
-// MARK: - Round Models
-
-struct RoundResponse: Codable, Identifiable {
-    let id: Int
-    let game_id: Int
-    let round_number: Int
-    let status: RoundStatus
-    let situation: String
-    let time_limit: TimeInterval
-    let started_at: Date?
-    let finished_at: Date?
-    let winner_id: Int?
-    let winner_nickname: String?
-    let winning_card_id: String?
-    let winning_card_name: String?
-}
-
-struct RoundDetailResponse: Codable {
-    let round: RoundResponse
-    let choices: [CardChoiceResponse]
-    let votes: [VoteResponse]
-    let results: RoundResultResponse?
-}
-
-// MARK: - Card Choice Models
-
-struct CardChoiceResponse: Codable, Identifiable {
-    let id: Int
-    let round_id: Int
-    let user_id: Int
-    let user_nickname: String
-    let card_id: String
-    let card_name: String
-    let card_image_url: String
-    let submitted_at: Date
-    let is_anonymous: Bool
-}
-
-struct SubmitChoiceRequest: Codable {
-    let card_id: String
-    let is_anonymous: Bool
-}
-
-struct SubmitChoiceResponse: Codable {
-    let choice: CardChoiceResponse
-    let message: String
-    let submitted: Bool
-}
-
-// MARK: - Voting Models
-
-struct VoteResponse: Codable, Identifiable {
-    let id: Int
-    let round_id: Int
-    let voter_id: Int
-    let voter_nickname: String
-    let voted_for_user_id: Int
-    let voted_for_nickname: String
-    let voted_at: Date
-}
-
-struct SubmitVoteRequest: Codable {
-    let voted_for_user_id: Int
-}
-
-struct SubmitVoteResponse: Codable {
-    let vote: VoteResponse
-    let message: String
-    let submitted: Bool
-}
-
-// MARK: - Round Results
-
-struct RoundResultResponse: Codable {
-    let round_id: Int
-    let winner_id: Int
-    let winner_nickname: String
-    let winning_card_id: String
-    let winning_card_name: String
-    let winning_card_image_url: String
-    let total_votes: Int
-    let vote_breakdown: [VoteBreakdown]
-    let points_awarded: Int
-}
-
-struct VoteBreakdown: Codable {
-    let user_id: Int
-    let nickname: String
-    let votes_received: Int
-    let percentage: Double
-}
-
-// MARK: - Game Actions
-
-struct StartVotingRequest: Codable {
-    let round_id: Int
-}
-
-struct StartVotingResponse: Codable {
-    let message: String
-    let voting_started: Bool
-    let choices: [CardChoiceResponse]
-}
-
-struct EndGameRequest: Codable {
-    let game_id: Int
-}
-
-struct EndGameResponse: Codable {
-    let message: String
-    let game_ended: Bool
-    let winner: GamePlayerResponse?
-    let final_scores: [PlayerScore]
-}
-
-struct PlayerScore: Codable {
-    let user_id: Int
-    let nickname: String
-    let final_score: Int
-    let rank: Int
-}
-
 // MARK: - Game State Management
 
-struct GameState: Codable {
-    let game: GameResponse
-    let current_round: RoundResponse?
-    let my_cards: [CardResponse]
-    let round_choices: [CardChoiceResponse]
-    let round_votes: [VoteResponse]
-    let round_results: RoundResultResponse?
-    let time_remaining: TimeInterval?
-    let can_submit_choice: Bool
-    let can_vote: Bool
-    let can_start_voting: Bool
-    let can_end_game: Bool
+@MainActor
+class GameState: ObservableObject {
+    @Published var currentGame: GameResponse?
+    @Published var currentRound: RoundResponse?
+    @Published var players: [GamePlayerResponse] = []
+    @Published var myCards: [CardResponse] = []
+    @Published var roundChoices: [ChoiceResponse] = []
+    @Published var roundVotes: [VoteResponse] = []
+    @Published var timeRemaining: Int?
+    @Published var isLoading = false
+    @Published var error: String?
+    
+    // Game state
+    @Published var gameStatus: GameStatus = .waiting
+    @Published var roundStatus: RoundStatus = .waiting
+    @Published var isMyTurn = false
+    @Published var hasSubmittedChoice = false
+    @Published var hasVoted = false
+    
+    // UI state
+    @Published var showVotingView = false
+    @Published var showGameFinished = false
+    @Published var showTimeoutWarning = false
+    
+    private var gameTimer: Timer?
+    private var roundTimer: Timer?
+    
+    init() {
+        setupTimers()
+    }
+    
+    deinit {
+        // Note: Timers will be automatically invalidated when the object is deallocated
+        // We can't call stopTimers() here due to actor isolation
+    }
+    
+    // MARK: - State Updates
+    
+    func updateGameState(_ gameState: GameStateResponse) {
+        currentGame = gameState.game
+        currentRound = gameState.current_round
+        players = gameState.players
+        myCards = gameState.my_cards
+        roundChoices = gameState.round_choices ?? []
+        roundVotes = gameState.round_votes ?? []
+        timeRemaining = gameState.time_remaining
+        
+        updateGameStatus()
+    }
+    
+    func updateRoundState(_ round: RoundResponse) {
+        currentRound = round
+        roundStatus = round.status
+        updateRoundStatus()
+    }
+    
+    func addChoice(_ choice: ChoiceResponse) {
+        roundChoices.append(choice)
+        if choice.user_id == getCurrentUserId() {
+            hasSubmittedChoice = true
+        }
+    }
+    
+    func addVote(_ vote: VoteResponse) {
+        roundVotes.append(vote)
+        if vote.voter_id == getCurrentUserId() {
+            hasVoted = true
+        }
+    }
+    
+    func startVoting() {
+        roundStatus = .voting
+        showVotingView = true
+        startRoundTimer()
+    }
+    
+    func endRound() {
+        roundStatus = .finished
+        showVotingView = false
+        stopRoundTimer()
+    }
+    
+    func endGame() {
+        gameStatus = .finished
+        showGameFinished = true
+        stopTimers()
+    }
+    
+    // MARK: - Timer Management
+    
+    private func setupTimers() {
+        // Setup game timer for overall game time
+        gameTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateGameTimer()
+        }
+    }
+    
+    private func startRoundTimer() {
+        roundTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateRoundTimer()
+        }
+    }
+    
+    private func stopRoundTimer() {
+        roundTimer?.invalidate()
+        roundTimer = nil
+    }
+    
+    private func stopTimers() {
+        gameTimer?.invalidate()
+        gameTimer = nil
+        stopRoundTimer()
+    }
+    
+    private func updateGameTimer() {
+        // Update game timer logic
+        if let timeRemaining = timeRemaining, timeRemaining > 0 {
+            self.timeRemaining = timeRemaining - 1
+        }
+    }
+    
+    private func updateRoundTimer() {
+        // Update round timer logic
+        if let timeRemaining = timeRemaining, timeRemaining > 0 {
+            self.timeRemaining = timeRemaining - 1
+            
+            // Show timeout warning at 10 seconds
+            if timeRemaining == 10 {
+                showTimeoutWarning = true
+            }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func updateGameStatus() {
+        guard let game = currentGame else { return }
+        gameStatus = game.status
+    }
+    
+    private func updateRoundStatus() {
+        guard let round = currentRound else { return }
+        roundStatus = round.status
+    }
+    
+    private func getCurrentUserId() -> Int {
+        // This should be retrieved from UserDefaults or TokenManager
+        // For now, return a placeholder
+        return 0
+    }
+    
+    // MARK: - Reset State
+    
+    func resetState() {
+        currentGame = nil
+        currentRound = nil
+        players = []
+        myCards = []
+        roundChoices = []
+        roundVotes = []
+        timeRemaining = nil
+        gameStatus = .waiting
+        roundStatus = .waiting
+        isMyTurn = false
+        hasSubmittedChoice = false
+        hasVoted = false
+        showVotingView = false
+        showGameFinished = false
+        showTimeoutWarning = false
+        error = nil
+        stopTimers()
+    }
 }
 
-// MARK: - Game Extensions
+// MARK: - Game State Extensions
 
-extension GameResponse {
-    var isActive: Bool {
-        return status == .playing || status == .voting
+extension GameState {
+    var isGameActive: Bool {
+        return currentGame != nil && gameStatus == .playing
     }
     
-    var isFinished: Bool {
-        return status == .finished
+    var isRoundActive: Bool {
+        return currentRound != nil && roundStatus == .collecting_choices
     }
     
-    var duration: TimeInterval? {
-        guard let started = started_at else { return nil }
-        let end = finished_at ?? Date()
-        return end.timeIntervalSince(started)
+    var isVotingActive: Bool {
+        return currentRound != nil && roundStatus == .voting
     }
     
-    var formattedDuration: String {
-        guard let duration = duration else { return "N/A" }
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+    var canSubmitChoice: Bool {
+        return isRoundActive && !hasSubmittedChoice
     }
     
-    var progressPercentage: Double {
-        guard total_rounds > 0 else { return 0 }
-        return Double(current_round ?? 0) / Double(total_rounds)
+    var canVote: Bool {
+        return isVotingActive && !hasVoted && roundChoices.count > 1
+    }
+    
+    var currentPlayer: GamePlayerResponse? {
+        let currentUserId = getCurrentUserId()
+        return players.first { $0.id == currentUserId }
+    }
+    
+    var otherPlayers: [GamePlayerResponse] {
+        let currentUserId = getCurrentUserId()
+        return players.filter { $0.id != currentUserId }
+    }
+    
+    var availableChoices: [ChoiceResponse] {
+        return roundChoices.filter { $0.user_id != getCurrentUserId() }
     }
 }
-
-extension RoundResponse {
-    var isActive: Bool {
-        return status == .choosing || status == .voting
-    }
-    
-    var timeRemaining: TimeInterval? {
-        guard let started = started_at else { return nil }
-        let elapsed = Date().timeIntervalSince(started)
-        return max(0, time_limit - elapsed)
-    }
-    
-    var formattedTimeRemaining: String {
-        guard let remaining = timeRemaining else { return "N/A" }
-        let minutes = Int(remaining) / 60
-        let seconds = Int(remaining) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-}
-
-extension GamePlayerResponse {
-    var isCurrentUser: Bool {
-        // This should be compared with current user ID
-        return false // Placeholder
-    }
-    
-    var scoreDisplay: String {
-        return "\(score) очков"
-    }
-    
-    var cardsPlayedDisplay: String {
-        return "\(cards_played) карт"
-    }
-    
-    var votesReceivedDisplay: String {
-        return "\(votes_received) голосов"
-    }
-} 

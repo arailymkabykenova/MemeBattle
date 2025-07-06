@@ -7,7 +7,7 @@
 
 import Foundation
 
-// MARK: - User Models
+// MARK: - Gender Enum
 
 enum Gender: String, Codable, CaseIterable {
     case male = "male"
@@ -26,13 +26,14 @@ enum Gender: String, Codable, CaseIterable {
     }
 }
 
+// MARK: - User Response
+
 struct UserResponse: Codable {
     let id: Int
     let device_id: String
     let nickname: String?
     let birth_date: Date?
     let gender: Gender?
-    let rating: Double
     let created_at: Date
     let age: Int?
     let is_profile_complete: Bool
@@ -65,7 +66,6 @@ struct UserStats: Codable {
 struct LeaderboardEntry: Codable, Identifiable {
     let id: Int
     let nickname: String
-    let rating: Double
     let rank: Int
     let games_played: Int
     let games_won: Int
@@ -79,7 +79,7 @@ struct LeaderboardResponse: Codable {
     let total_pages: Int
 }
 
-// MARK: - User Validation Models
+// MARK: - Nickname Check
 
 struct NicknameCheckRequest: Codable {
     let nickname: String
@@ -88,19 +88,6 @@ struct NicknameCheckRequest: Codable {
 struct NicknameCheckResponse: Codable {
     let available: Bool
     let message: String?
-}
-
-// MARK: - Rating Models
-
-struct RatingUpdateRequest: Codable {
-    let rating: Double
-}
-
-struct RatingUpdateResponse: Codable {
-    let new_rating: Double
-    let rating_change: Double
-    let rank: Int?
-    let total_players: Int?
 }
 
 // MARK: - User Extensions

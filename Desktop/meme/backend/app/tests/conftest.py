@@ -406,4 +406,4 @@ def websocket_auth_token(test_user: User) -> str:
 @pytest.fixture
 def websocket_auth_token_user2(test_user2: User) -> str:
     """Создает токен для WebSocket аутентификации второго пользователя."""
-    return create_access_token(data={"sub": str(test_user2.id)})
+    return create_access_token(data={"sub": str(test_user2.id)}) 

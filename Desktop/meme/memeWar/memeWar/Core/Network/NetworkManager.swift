@@ -6,114 +6,152 @@
 //
 
 import Foundation
-import Combine
 
-class NetworkManager {
+protocol NetworkManagerProtocol {
+    func get<T: Codable>(endpoint: String) async throws -> T
+    func post<T: Codable, U: Codable>(endpoint: String, body: U) async throws -> T
+    func post<T: Codable>(endpoint: String, body: Data) async throws -> T
+    func put<T: Codable, U: Codable>(endpoint: String, body: U) async throws -> T
+    func delete<T: Codable>(endpoint: String) async throws -> T
+}
+
+class NetworkManager: NetworkManagerProtocol {
     static let shared = NetworkManager()
     
-    private let session: URLSession
     private let tokenManager = TokenManager.shared
+    private let session = URLSession.shared
+    private let decoder: JSONDecoder
+    private let encoder: JSONEncoder
     
     private init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        config.waitsForConnectivity = true
+        decoder = JSONDecoder()
+        encoder = JSONEncoder()
         
-        session = URLSession(configuration: config)
+        // Configure date decoding
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+        decoder.dateDecodingStrategy = .formatted(dateFormatter)
+        
+        // Configure date encoding
+        encoder.dateEncodingStrategy = .formatted(dateFormatter)
     }
     
-    // MARK: - Generic Request Methods
+    // MARK: - GET Request
     
-    func request<T: Codable>(
-        endpoint: String,
-        method: HTTPMethod = .GET,
-        body: Encodable? = nil,
-        queryItems: [URLQueryItem]? = nil
-    ) async throws -> T {
+    func get<T: Codable>(endpoint: String) async throws -> T {
+        let url = try buildURL(endpoint: endpoint)
+        let request = try buildRequest(url: url, method: "GET")
         
-        guard let url = buildURL(endpoint: endpoint, queryItems: queryItems) else {
+        let (data, response) = try await session.data(for: request)
+        
+        try validateResponse(response)
+        return try decoder.decode(T.self, from: data)
+    }
+    
+    // MARK: - POST Request
+    
+    func post<T: Codable, U: Codable>(endpoint: String, body: U) async throws -> T {
+        let url = try buildURL(endpoint: endpoint)
+        var request = try buildRequest(url: url, method: "POST")
+        
+        let bodyData = try encoder.encode(body)
+        request.httpBody = bodyData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        try validateResponse(response)
+        return try decoder.decode(T.self, from: data)
+    }
+    
+    func post<T: Codable>(endpoint: String, body: Data) async throws -> T {
+        let url = try buildURL(endpoint: endpoint)
+        var request = try buildRequest(url: url, method: "POST")
+        
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        try validateResponse(response)
+        return try decoder.decode(T.self, from: data)
+    }
+    
+    // MARK: - PUT Request
+    
+    func put<T: Codable, U: Codable>(endpoint: String, body: U) async throws -> T {
+        let url = try buildURL(endpoint: endpoint)
+        var request = try buildRequest(url: url, method: "PUT")
+        
+        let bodyData = try encoder.encode(body)
+        request.httpBody = bodyData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        try validateResponse(response)
+        return try decoder.decode(T.self, from: data)
+    }
+    
+    // MARK: - DELETE Request
+    
+    func delete<T: Codable>(endpoint: String) async throws -> T {
+        let url = try buildURL(endpoint: endpoint)
+        let request = try buildRequest(url: url, method: "DELETE")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        try validateResponse(response)
+        return try decoder.decode(T.self, from: data)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func buildURL(endpoint: String) throws -> URL {
+        let baseURL = APIConstants.baseURL
+        let fullURLString = baseURL + endpoint
+        
+        guard let url = URL(string: fullURLString) else {
             throw NetworkError.invalidURL
         }
         
+        return url
+    }
+    
+    private func buildRequest(url: URL, method: String) throws -> URLRequest {
         var request = URLRequest(url: url)
-        request.httpMethod = method.rawValue
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpMethod = method
+        request.timeoutInterval = AppConstants.networkTimeout
         
         // Add authorization header if token exists
         if let token = tokenManager.getToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
-        // Add body if provided
-        if let body = body {
-            do {
-                let encoder = JSONEncoder()
-                encoder.dateEncodingStrategy = .iso8601
-                request.httpBody = try encoder.encode(body)
-            } catch {
-                throw NetworkError.encodingError
-            }
-        }
-        
-        do {
-            let (data, response) = try await session.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkError.unknown
-            }
-            
-            // Handle HTTP status codes
-            switch httpResponse.statusCode {
-            case 200...299:
-                break
-            case 401:
-                tokenManager.clearToken()
-                throw NetworkError.unauthorized
-            case 403:
-                throw NetworkError.forbidden
-            case 404:
-                throw NetworkError.notFound
-            case 500...599:
-                throw NetworkError.serverError(httpResponse.statusCode)
-            default:
-                throw NetworkError.unknown
-            }
-            
-            // Decode response
-            do {
-                let decoder = JSONDecoder()
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
-                formatter.locale = Locale(identifier: "en_US_POSIX")
-                formatter.timeZone = TimeZone(secondsFromGMT: 0)
-                decoder.dateDecodingStrategy = .formatted(formatter)
-                return try decoder.decode(T.self, from: data)
-            } catch {
-                print("[DecodingError]", error)
-                if let dataString = String(data: data, encoding: .utf8) {
-                    print("[Raw JSON]", dataString)
-                }
-                throw NetworkError.decodingError
-            }
-            
-        } catch let error as NetworkError {
-            throw error
-        } catch {
-            throw NetworkError.networkError(error)
-        }
+        return request
     }
     
-    // MARK: - Helper Methods
-    
-    private func buildURL(endpoint: String, queryItems: [URLQueryItem]?) -> URL? {
-        var components = URLComponents(string: APIConstants.baseURL + endpoint)
-        
-        if let queryItems = queryItems {
-            components?.queryItems = queryItems
+    private func validateResponse(_ response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.invalidResponse
         }
         
-        return components?.url
+        switch httpResponse.statusCode {
+        case 200...299:
+            return
+        case 401:
+            throw NetworkError.unauthorized
+        case 403:
+            throw NetworkError.forbidden
+        case 404:
+            throw NetworkError.notFound
+        case 422:
+            throw NetworkError.validationError
+        case 500...599:
+            throw NetworkError.serverError
+        default:
+            throw NetworkError.httpError(statusCode: httpResponse.statusCode)
+        }
     }
 }
 
@@ -131,22 +169,32 @@ enum HTTPMethod: String {
 
 extension NetworkManager {
     func get<T: Codable>(_ endpoint: String, queryItems: [URLQueryItem]? = nil) async throws -> T {
-        return try await request(endpoint: endpoint, method: .GET, queryItems: queryItems)
+        return try await get(endpoint)
     }
     
     func post<T: Codable, U: Encodable>(_ endpoint: String, body: U) async throws -> T {
-        return try await request(endpoint: endpoint, method: .POST, body: body)
+        return try await post(endpoint, body: body)
     }
     
     func put<T: Codable, U: Encodable>(_ endpoint: String, body: U) async throws -> T {
-        return try await request(endpoint: endpoint, method: .PUT, body: body)
+        return try await put(endpoint, body: body)
     }
     
     func delete<T: Codable>(_ endpoint: String) async throws -> T {
-        return try await request(endpoint: endpoint, method: .DELETE)
+        return try await delete(endpoint)
     }
     
     func patch<T: Codable, U: Encodable>(_ endpoint: String, body: U) async throws -> T {
-        return try await request(endpoint: endpoint, method: .PATCH, body: body)
+        let url = try buildURL(endpoint: endpoint)
+        var request = try buildRequest(url: url, method: "PATCH")
+        
+        let bodyData = try encoder.encode(body)
+        request.httpBody = bodyData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        try validateResponse(response)
+        return try decoder.decode(T.self, from: data)
     }
 } 

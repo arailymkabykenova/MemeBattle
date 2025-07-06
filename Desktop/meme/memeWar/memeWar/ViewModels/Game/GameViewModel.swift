@@ -7,280 +7,179 @@
 
 import Foundation
 import Combine
+import UIKit
 
 @MainActor
-class GameViewModel: BaseViewModel {
+class GameViewModel: ObservableObject {
     private let gameRepository: GameRepositoryProtocol
-    private let cardsRepository: CardsRepositoryProtocol
-    private let webSocketManager = WebSocketManager.shared
+    private let webSocketManager: WebSocketManager
     
-    @Published var currentGame: GameDetailResponse?
-    @Published var gameState: GameState?
-    @Published var myCards: [CardResponse] = []
+    @Published var gameState: GameStateResponse?
     @Published var currentRound: RoundResponse?
-    @Published var roundChoices: [CardChoiceResponse] = []
+    @Published var myCards: [CardResponse] = []
+    @Published var roundChoices: [ChoiceResponse] = []
     @Published var roundVotes: [VoteResponse] = []
-    @Published var roundResults: RoundResultResponse?
-    @Published var timeRemaining: TimeInterval?
+    @Published var players: [GamePlayerResponse] = []
     @Published var selectedCard: CardResponse?
-    @Published var isAnonymous: Bool = false
+    @Published var selectedVote: Int?
+    @Published var isAnonymous = false
+    @Published var isLoading = false
+    @Published var showError = false
+    @Published var errorMessage: String?
+    @Published var timeRemaining: Int?
+    @Published var gameStatus: GameStatus = .waiting
+    @Published var roundStatus: RoundStatus = .waiting
     
-    private var gameTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    private var gameTimer: Timer?
     
     init(gameRepository: GameRepositoryProtocol = GameRepository(),
-         cardsRepository: CardsRepositoryProtocol = CardsRepository()) {
+         webSocketManager: WebSocketManager = WebSocketManager.shared) {
         self.gameRepository = gameRepository
-        self.cardsRepository = cardsRepository
-        super.init()
+        self.webSocketManager = webSocketManager
         
         setupWebSocketObservers()
     }
     
-    // MARK: - Game Initialization
+    // MARK: - Game Management
     
-    func initializeGame(roomId: Int) async {
-        setLoading(true)
+    func loadGameState(roomId: Int) async {
+        isLoading = true
+        showError = false
         
         do {
-            // Connect to WebSocket
-            try await webSocketManager.connect(roomId: roomId)
-            
-            // Get current game state
-            if let game = try await gameRepository.getCurrentGame(roomId: roomId) {
-                currentGame = game
-                currentRound = game.current_round
-                
-                // Get my cards for the game
-                myCards = try await gameRepository.getMyCardsForGame()
-                
-                // Get current round choices if voting is active
-                if let round = currentRound, round.status == .voting {
-                    roundChoices = try await gameRepository.getRoundChoices(roundId: round.id)
-                }
-                
-                // Start game timer
-                startGameTimer()
-            }
-            
-            setLoading(false)
+            gameState = try await gameRepository.getGameState(roomId: roomId)
+            updateGameState()
+        } catch {
+            handleError(error)
+        }
+        
+        isLoading = false
+    }
+    
+    func loadMyCards() async {
+        do {
+            myCards = try await gameRepository.getMyCardsForGame()
         } catch {
             handleError(error)
         }
     }
     
-    // MARK: - Card Selection
-    
-    func selectCard(_ card: CardResponse) {
-        selectedCard = card
-    }
-    
-    func toggleAnonymous() {
-        isAnonymous.toggle()
+    func createRound(gameId: Int) async {
+        isLoading = true
+        showError = false
+        
+        do {
+            currentRound = try await gameRepository.createRound(gameId: gameId)
+            roundStatus = currentRound?.status ?? .waiting
+            
+            // Send round started message via WebSocket
+            try await webSocketManager.sendMessage(WebSocketMessage.roundStarted(roundId: currentRound?.id ?? 0))
+            
+        } catch {
+            handleError(error)
+        }
+        
+        isLoading = false
     }
     
     func submitCardChoice() async {
-        guard let card = selectedCard,
-              let round = currentRound,
-              round.status == .choosing else { return }
+        guard let roundId = currentRound?.id,
+              let card = selectedCard else { return }
         
-        setLoading(true)
+        isLoading = true
+        showError = false
         
         do {
-            _ = try await gameRepository.submitChoice(
-                roundId: round.id,
+            let request = ChoiceRequest(
+                card_id: card.id,
+                is_anonymous: isAnonymous
+            )
+            
+            let choice = try await gameRepository.submitChoice(roundId: roundId, request: request)
+            
+            // Send choice submitted message via WebSocket
+            try await webSocketManager.submitCardChoice(
+                roundId: roundId,
                 cardId: card.id,
                 isAnonymous: isAnonymous
             )
             
-            // Clear selection
             selectedCard = nil
             
-            setLoading(false)
         } catch {
             handleError(error)
         }
-    }
-    
-    // MARK: - Voting
-    
-    func submitVote(for userId: Int) async {
-        guard let round = currentRound,
-              round.status == .voting else { return }
         
-        setLoading(true)
-        
-        do {
-            _ = try await gameRepository.submitVote(
-                roundId: round.id,
-                votedForUserId: userId
-            )
-            
-            setLoading(false)
-        } catch {
-            handleError(error)
-        }
+        isLoading = false
     }
-    
-    // MARK: - Game Management
     
     func startVoting() async {
-        guard let round = currentRound else { return }
+        guard let roundId = currentRound?.id else { return }
         
-        setLoading(true)
+        isLoading = true
+        showError = false
         
         do {
-            let response = try await gameRepository.startVoting(roundId: round.id)
-            roundChoices = response.choices
+            try await gameRepository.startVoting(roundId: roundId)
             
-            setLoading(false)
+            // Send voting started message via WebSocket
+            try await webSocketManager.startVoting(roundId: roundId)
+            
+            roundStatus = .voting
+            
+        } catch {
+            handleError(error)
+        }
+        
+        isLoading = false
+    }
+    
+    func submitVote() async {
+        guard let roundId = currentRound?.id,
+              let votedForUserId = selectedVote else { return }
+        
+        isLoading = true
+        showError = false
+        
+        do {
+            let request = VoteRequest(voted_for_user_id: votedForUserId)
+            let vote = try await gameRepository.submitVote(roundId: roundId, request: request)
+            
+            // Send vote submitted message via WebSocket
+            try await webSocketManager.submitVote(roundId: roundId, votedForUserId: votedForUserId)
+            
+            selectedVote = nil
+            
+        } catch {
+            handleError(error)
+        }
+        
+        isLoading = false
+    }
+    
+    func loadRoundResults(roundId: Int) async {
+        do {
+            let results = try await gameRepository.getRoundResults(roundId: roundId)
+            roundChoices = results.choices
+            roundVotes = results.votes
         } catch {
             handleError(error)
         }
     }
     
-    func endGame() async {
-        guard currentGame != nil else { return }
-        
-        setLoading(true)
-        
+    func endGame(gameId: Int) async {
         do {
-            let response = try await gameRepository.endGame(gameId: currentGame!.game.id)
-            
-            // Update game state - create new instance since properties are let
-            if let winner = response.winner {
-                currentGame = GameDetailResponse(
-                    game: GameResponse(
-                        id: currentGame!.game.id,
-                        room_id: currentGame!.game.room_id,
-                        status: .finished,
-                        current_round: currentGame!.game.current_round,
-                        total_rounds: currentGame!.game.total_rounds,
-                        created_at: currentGame!.game.created_at,
-                        started_at: currentGame!.game.started_at,
-                        finished_at: Date(),
-                        winner_id: winner.id,
-                        winner_nickname: winner.nickname
-                    ),
-                    players: currentGame!.players,
-                    current_round: currentGame!.current_round,
-                    rounds: currentGame!.rounds,
-                    winner: winner
-                )
-            }
-            
-            setLoading(false)
+            let game = try await gameRepository.endGame(gameId: gameId)
+            gameStatus = game.status
         } catch {
             handleError(error)
-        }
-    }
-    
-    // MARK: - WebSocket Event Handling
-    
-    private func setupWebSocketObservers() {
-        // Game started
-        NotificationCenter.default.publisher(for: .gameStarted)
-            .sink { [weak self] notification in
-                self?.handleGameStarted(notification.object as? [String: Any])
-            }
-            .store(in: &cancellables)
-        
-        // Round started
-        NotificationCenter.default.publisher(for: .roundStarted)
-            .sink { [weak self] notification in
-                self?.handleRoundStarted(notification.object as? [String: Any])
-            }
-            .store(in: &cancellables)
-        
-        // Voting started
-        NotificationCenter.default.publisher(for: .votingStarted)
-            .sink { [weak self] notification in
-                self?.handleVotingStarted(notification.object as? [String: Any])
-            }
-            .store(in: &cancellables)
-        
-        // Round ended
-        NotificationCenter.default.publisher(for: .roundEnded)
-            .sink { [weak self] notification in
-                self?.handleRoundEnded(notification.object as? [String: Any])
-            }
-            .store(in: &cancellables)
-        
-        // Game ended
-        NotificationCenter.default.publisher(for: .gameEnded)
-            .sink { [weak self] notification in
-                self?.handleGameEnded(notification.object as? [String: Any])
-            }
-            .store(in: &cancellables)
-        
-        // Game state update
-        NotificationCenter.default.publisher(for: .gameStateUpdate)
-            .sink { [weak self] notification in
-                self?.handleGameStateUpdate(notification.object as? [String: Any])
-            }
-            .store(in: &cancellables)
-    }
-    
-    private func handleGameStarted(_ data: [String: Any]?) {
-        // Handle game started event
-        Task {
-            await refreshGameState()
-        }
-    }
-    
-    private func handleRoundStarted(_ data: [String: Any]?) {
-        // Handle round started event
-        Task {
-            await refreshGameState()
-        }
-    }
-    
-    private func handleVotingStarted(_ data: [String: Any]?) {
-        // Handle voting started event
-        Task {
-            await refreshGameState()
-        }
-    }
-    
-    private func handleRoundEnded(_ data: [String: Any]?) {
-        // Handle round ended event
-        Task {
-            await refreshGameState()
-        }
-    }
-    
-    private func handleGameEnded(_ data: [String: Any]?) {
-        // Handle game ended event
-        Task {
-            await refreshGameState()
-        }
-    }
-    
-    private func handleGameStateUpdate(_ data: [String: Any]?) {
-        // Handle game state update event
-        Task {
-            await refreshGameState()
-        }
-    }
-    
-    // MARK: - Game State Refresh
-    
-    private func refreshGameState() async {
-        guard let game = currentGame else { return }
-        
-        do {
-            let state = try await gameRepository.getActionStatus(roundId: currentRound?.id ?? 0)
-            gameState = state
-            currentRound = state.current_round
-            timeRemaining = state.time_remaining
-        } catch {
-            print("Failed to refresh game state: \(error)")
         }
     }
     
     // MARK: - Timer Management
     
-    private func startGameTimer() {
+    func startGameTimer() {
         gameTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateTimer()
@@ -288,76 +187,116 @@ class GameViewModel: BaseViewModel {
         }
     }
     
-    private func stopGameTimer() {
+    func stopGameTimer() {
         gameTimer?.invalidate()
         gameTimer = nil
     }
     
     private func updateTimer() {
-        guard let remaining = timeRemaining else { return }
-        
-        if remaining > 0 {
-            timeRemaining = remaining - 1
+        if let timeRemaining = timeRemaining, timeRemaining > 0 {
+            self.timeRemaining = timeRemaining - 1
         } else {
-            // Time's up
             stopGameTimer()
         }
     }
     
-    // MARK: - Computed Properties
+    // MARK: - WebSocket Observers
     
-    var isGameActive: Bool {
-        return currentGame?.game.isActive ?? false
+    private func setupWebSocketObservers() {
+        NotificationCenter.default.publisher(for: Notification.Name.roundStarted)
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    await self?.handleRoundStarted(notification)
+                }
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: Notification.Name.votingStarted)
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    await self?.handleVotingStarted(notification)
+                }
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: Notification.Name.roundEnded)
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    await self?.handleRoundEnded(notification)
+                }
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: Notification.Name.gameEnded)
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    await self?.handleGameEnded(notification)
+                }
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: Notification.Name.timeoutWarning)
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    await self?.handleTimeoutWarning(notification)
+                }
+            }
+            .store(in: &cancellables)
     }
     
-    var isGameFinished: Bool {
-        return currentGame?.game.isFinished ?? false
-    }
-    
-    var canSubmitChoice: Bool {
-        return gameState?.can_submit_choice ?? false
-    }
-    
-    var canVote: Bool {
-        return gameState?.can_vote ?? false
-    }
-    
-    var canStartVoting: Bool {
-        return gameState?.can_start_voting ?? false
-    }
-    
-    var canEndGame: Bool {
-        return gameState?.can_end_game ?? false
-    }
-    
-    var formattedTimeRemaining: String {
-        guard let remaining = timeRemaining else { return "N/A" }
-        let minutes = Int(remaining) / 60
-        let seconds = Int(remaining) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-    
-    var currentSituation: String {
-        return currentRound?.situation ?? "Ожидание ситуации..."
-    }
-    
-    var roundNumber: String {
-        guard let game = currentGame else { return "0/0" }
-        return "\(game.game.current_round ?? 0)/\(game.game.total_rounds)"
-    }
-    
-    // MARK: - Cleanup
-    
-    override func cleanup() {
-        stopGameTimer()
-        webSocketManager.disconnect()
-        cancellables.removeAll()
-        super.cleanup()
-    }
-    
-    deinit {
-        Task { @MainActor in
-            cleanup()
+    private func handleRoundStarted(_ notification: Notification) async {
+        // Handle round started event
+        if let data = notification.userInfo?["data"] as? [String: Any],
+           let roundId = data["round_id"] as? Int {
+            await loadRoundResults(roundId: roundId)
         }
+    }
+    
+    private func handleVotingStarted(_ notification: Notification) async {
+        roundStatus = .voting
+        startGameTimer()
+    }
+    
+    private func handleRoundEnded(_ notification: Notification) async {
+        roundStatus = .finished
+        stopGameTimer()
+        
+        if let data = notification.userInfo?["data"] as? [String: Any],
+           let roundId = data["round_id"] as? Int {
+            await loadRoundResults(roundId: roundId)
+        }
+    }
+    
+    private func handleGameEnded(_ notification: Notification) async {
+        gameStatus = .finished
+        stopGameTimer()
+    }
+    
+    private func handleTimeoutWarning(_ notification: Notification) async {
+        // Handle timeout warning
+        if let data = notification.userInfo?["data"] as? [String: Any],
+           let timeRemaining = data["time_remaining"] as? Int {
+            self.timeRemaining = timeRemaining
+        }
+    }
+    
+    // MARK: - Private Methods
+    
+    private func updateGameState() {
+        guard let gameState = gameState else { return }
+        
+        currentRound = gameState.current_round
+        myCards = gameState.my_cards
+        players = gameState.players
+        roundChoices = gameState.round_choices ?? []
+        roundVotes = gameState.round_votes ?? []
+        timeRemaining = gameState.time_remaining
+        gameStatus = gameState.game.status
+        roundStatus = currentRound?.status ?? .waiting
+    }
+    
+    private func handleError(_ error: Error) {
+        showError = true
+        errorMessage = error.localizedDescription
     }
 } 

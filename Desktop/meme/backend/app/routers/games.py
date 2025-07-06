@@ -437,7 +437,7 @@ async def get_action_status(
             ).total_seconds() if game_round.selection_deadline else None
         }
     except AppException as e:
-        raise create_http_exception(e)
+        raise create_http_exception(e) 
 
 
 @router.get("/rounds/{round_id}/all-choices")

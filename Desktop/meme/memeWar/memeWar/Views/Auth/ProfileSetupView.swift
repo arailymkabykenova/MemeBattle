@@ -8,9 +8,8 @@
 import SwiftUI
 
 struct ProfileSetupView: View {
-    @EnvironmentObject var loginViewModel: LoginViewModel
-    @StateObject private var viewModel = ProfileSetupViewModel()
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var profileViewModel: ProfileViewModel
+    @EnvironmentObject var cardsViewModel: CardsViewModel
     
     var body: some View {
         NavigationView {
@@ -22,9 +21,10 @@ struct ProfileSetupView: View {
                             .font(.system(size: 60))
                             .foregroundColor(.accentColor)
                         
-                        Text("Настройка профиля")
+                        Text("Завершите профиль")
                             .font(.title)
                             .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
                         
                         Text("Расскажите о себе, чтобы начать играть")
                             .font(.body)
@@ -34,77 +34,67 @@ struct ProfileSetupView: View {
                     .padding(.top, AppConstants.largePadding)
                     
                     // Form
-                    VStack(spacing: AppConstants.padding) {
-                        // Nickname
+                    VStack(spacing: AppConstants.largePadding) {
+                        // Nickname Field
                         VStack(alignment: .leading, spacing: AppConstants.smallPadding) {
                             Text("Никнейм")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .fontWeight(.medium)
                             
-                            TextField("Введите никнейм", text: $viewModel.nickname)
+                            TextField("Введите никнейм", text: $profileViewModel.nickname)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .autocapitalization(.none)
                                 .disableAutocorrection(true)
                             
-                            if !viewModel.nicknameError.isEmpty {
-                                Text(viewModel.nicknameError)
+                            if let error = profileViewModel.nicknameError {
+                                Text(error)
                                     .font(.caption)
                                     .foregroundColor(.red)
                             }
                         }
                         
-                        // Birth Date
+                        // Birth Date Field
                         VStack(alignment: .leading, spacing: AppConstants.smallPadding) {
                             Text("Дата рождения")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .fontWeight(.medium)
                             
                             DatePicker(
                                 "Дата рождения",
-                                selection: $viewModel.birthDate,
+                                selection: $profileViewModel.birthDate,
                                 in: ...Date(),
                                 displayedComponents: .date
                             )
-                            .datePickerStyle(CompactDatePickerStyle())
+                            .datePickerStyle(WheelDatePickerStyle())
                             .labelsHidden()
-                            
-                            if !viewModel.birthDateError.isEmpty {
-                                Text(viewModel.birthDateError)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
                         }
                         
-                        // Gender
+                        // Gender Field
                         VStack(alignment: .leading, spacing: AppConstants.smallPadding) {
                             Text("Пол")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .fontWeight(.medium)
                             
-                            Picker("Пол", selection: $viewModel.gender) {
+                            Picker("Пол", selection: $profileViewModel.selectedGender) {
                                 ForEach(Gender.allCases, id: \.self) { gender in
                                     Text(gender.displayName).tag(gender)
                                 }
                             }
                             .pickerStyle(SegmentedPickerStyle())
-                            
-                            if !viewModel.genderError.isEmpty {
-                                Text(viewModel.genderError)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
                         }
                     }
                     .padding(.horizontal, AppConstants.largePadding)
                     
-                    // Save Button
+                    Spacer()
+                    
+                    // Submit Button
                     Button(action: {
                         Task {
-                            await viewModel.saveProfile()
+                            await profileViewModel.completeProfile()
                         }
                     }) {
                         HStack {
-                            if viewModel.isLoading {
+                            if profileViewModel.isLoading {
                                 ProgressView()
                                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                     .scaleEffect(0.8)
@@ -112,8 +102,8 @@ struct ProfileSetupView: View {
                                 Image(systemName: "checkmark.circle.fill")
                             }
                             
-                            Text(viewModel.isLoading ? "Сохранение..." : "Сохранить профиль")
-                                .fontWeight(.semibold)
+                            Text(profileViewModel.isLoading ? "Сохранение..." : "Завершить профиль")
+                                .fontWeight(.medium)
                         }
                         .font(.body)
                         .foregroundColor(.white)
@@ -121,37 +111,40 @@ struct ProfileSetupView: View {
                         .padding(.vertical, AppConstants.padding)
                         .background(
                             RoundedRectangle(cornerRadius: AppConstants.cornerRadius)
-                                .fill(viewModel.isFormValid && !viewModel.isLoading ? Color.accentColor : Color.gray)
+                                .fill(isFormValid ? Color.accentColor : Color.gray)
                         )
                     }
-                    .disabled(!viewModel.isFormValid || viewModel.isLoading)
+                    .disabled(!isFormValid || profileViewModel.isLoading)
                     .padding(.horizontal, AppConstants.largePadding)
                     
-                    Spacer(minLength: AppConstants.largePadding)
+                    // Error Message
+                    if profileViewModel.showError {
+                        Text(profileViewModel.errorMessage ?? "Произошла ошибка")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, AppConstants.largePadding)
+                    }
+                    
+                    Spacer(minLength: 100)
                 }
             }
             .navigationBarHidden(true)
-        }
-        .onReceive(viewModel.$profileSaved) { saved in
-            if saved {
-                // Profile saved successfully, update login view model
+            .onAppear {
                 Task {
-                    await loginViewModel.getCurrentUser()
+                    await profileViewModel.checkProfileStatus()
                 }
             }
         }
-        .errorAlert(
-            error: viewModel.errorMessage,
-            isPresented: $viewModel.showError
-        ) {
-            Task {
-                await viewModel.saveProfile()
-            }
-        }
+    }
+    
+    private var isFormValid: Bool {
+        profileViewModel.isFormValid
     }
 }
 
 #Preview {
     ProfileSetupView()
-        .environmentObject(LoginViewModel())
+        .environmentObject(ProfileViewModel())
+        .environmentObject(CardsViewModel())
 } 

@@ -9,18 +9,20 @@ import SwiftUI
 
 @main
 struct memeWarApp: App {
-    @StateObject private var loginViewModel = LoginViewModel()
+    @StateObject private var authViewModel = AuthViewModel()
+    @StateObject private var profileViewModel = ProfileViewModel()
+    @StateObject private var cardsViewModel = CardsViewModel()
+    @StateObject private var roomViewModel = RoomViewModel()
+    @StateObject private var gameViewModel = GameViewModel()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(loginViewModel)
-                .onAppear {
-                    // Автоматическая авторизация при запуске
-                    Task {
-                        await loginViewModel.authenticateDevice()
-                    }
-                }
+                .environmentObject(authViewModel)
+                .environmentObject(profileViewModel)
+                .environmentObject(cardsViewModel)
+                .environmentObject(roomViewModel)
+                .environmentObject(gameViewModel)
         }
     }
 }

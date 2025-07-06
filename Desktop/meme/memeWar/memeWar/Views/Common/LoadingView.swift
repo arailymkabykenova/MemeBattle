@@ -15,10 +15,10 @@ struct LoadingView: View {
     }
     
     var body: some View {
-        VStack(spacing: AppConstants.padding) {
+        VStack(spacing: AppConstants.largePadding) {
             ProgressView()
-                .scaleEffect(1.2)
                 .progressViewStyle(CircularProgressViewStyle(tint: .accentColor))
+                .scaleEffect(1.5)
             
             Text(message)
                 .font(.body)

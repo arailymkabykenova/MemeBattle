@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import UIKit
 
 class WebSocketManager: ObservableObject {
     static let shared = WebSocketManager()
@@ -95,14 +96,10 @@ class WebSocketManager: ObservableObject {
             throw NetworkError.notConnected
         }
         
-        do {
-            let data = try JSONEncoder().encode(message)
-            let webSocketMessage = URLSessionWebSocketTask.Message.data(data)
-            
-            try await webSocket.send(webSocketMessage)
-        } catch {
-            throw NetworkError.networkError(error)
-        }
+        let data = try JSONEncoder().encode(message)
+        let webSocketMessage = URLSessionWebSocketTask.Message.data(data)
+        
+        try await webSocket.send(webSocketMessage)
     }
     
     private func receiveMessages() async {
@@ -136,38 +133,116 @@ class WebSocketManager: ObservableObject {
     private func handleWebSocketEvent(_ event: WebSocketEvent) {
         // Handle events and notify ViewModels
         switch event.type {
+        case .roomStateChanged:
+            NotificationCenter.default.post(
+                name: Notification.Name.roomStateChanged,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .gameStarted:
+            NotificationCenter.default.post(
+                name: Notification.Name.gameStarted,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .roundStarted:
+            NotificationCenter.default.post(
+                name: Notification.Name.roundStarted,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .votingStarted:
+            NotificationCenter.default.post(
+                name: Notification.Name.votingStarted,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .roundEnded:
+            NotificationCenter.default.post(
+                name: Notification.Name.roundEnded,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .gameEnded:
+            NotificationCenter.default.post(
+                name: Notification.Name.gameEnded,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .playerJoined:
+            NotificationCenter.default.post(
+                name: Notification.Name.playerJoined,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .playerLeft:
+            NotificationCenter.default.post(
+                name: Notification.Name.playerLeft,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .timeoutWarning:
+            NotificationCenter.default.post(
+                name: Notification.Name.timeoutWarning,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
+        case .playerTimeout:
+            NotificationCenter.default.post(
+                name: Notification.Name.playerTimeout,
+                object: nil,
+                userInfo: ["data": event.data]
+            )
         case .pong:
             // Handle ping/pong for connection maintenance
             break
-        case .roomStateChanged:
-            NotificationCenter.default.post(name: .roomStateChanged, object: event.data)
-        case .gameStarted:
-            NotificationCenter.default.post(name: .gameStarted, object: event.data)
-        case .roundStarted:
-            NotificationCenter.default.post(name: .roundStarted, object: event.data)
-        case .votingStarted:
-            NotificationCenter.default.post(name: .votingStarted, object: event.data)
-        case .roundEnded:
-            NotificationCenter.default.post(name: .roundEnded, object: event.data)
-        case .gameEnded:
-            NotificationCenter.default.post(name: .gameEnded, object: event.data)
-        case .playerJoined:
-            NotificationCenter.default.post(name: .playerJoined, object: event.data)
-        case .playerLeft:
-            NotificationCenter.default.post(name: .playerLeft, object: event.data)
-        case .timeoutWarning:
-            NotificationCenter.default.post(name: .timeoutWarning, object: event.data)
-        case .playerTimeout:
-            NotificationCenter.default.post(name: .playerTimeout, object: event.data)
-        case .cardChoiceSubmitted:
-            NotificationCenter.default.post(name: .cardChoiceSubmitted, object: event.data)
-        case .voteSubmitted:
-            NotificationCenter.default.post(name: .voteSubmitted, object: event.data)
-        case .gameStateUpdate:
-            NotificationCenter.default.post(name: .gameStateUpdate, object: event.data)
-        case .error:
-            NotificationCenter.default.post(name: .websocketError, object: event.data)
         }
+    }
+    
+    // MARK: - WebSocket Event Decoding
+    
+    private func decodeWebSocketEvent(from data: Data) throws -> WebSocketEvent {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateStr = try container.decode(String.self)
+            
+            // Try ISO8601 with fractional seconds (server format: 2025-07-06T04:00:10.402520)
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = isoFormatter.date(from: dateStr) {
+                return date
+            }
+            
+            // Try standard ISO8601 without fractional seconds
+            let standardISOFormatter = ISO8601DateFormatter()
+            standardISOFormatter.formatOptions = [.withInternetDateTime]
+            if let date = standardISOFormatter.date(from: dateStr) {
+                return date
+            }
+            
+            // Try DateFormatter with specific format for fractional seconds
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+            if let date = dateFormatter.date(from: dateStr) {
+                return date
+            }
+            
+            // Try date-only format (yyyy-MM-dd)
+            let dateOnlyFormatter = DateFormatter()
+            dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
+            dateOnlyFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dateOnlyFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+            if let date = dateOnlyFormatter.date(from: dateStr) {
+                return date
+            }
+            
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string: \(dateStr)")
+        }
+        
+        return try decoder.decode(WebSocketEvent.self, from: data)
     }
     
     @MainActor

@@ -9,44 +9,50 @@ import Foundation
 
 enum NetworkError: LocalizedError {
     case invalidURL
-    case noData
-    case decodingError
-    case encodingError
+    case invalidResponse
     case unauthorized
     case forbidden
     case notFound
-    case serverError(Int)
+    case validationError(String)
+    case serverError
+    case httpError(statusCode: Int)
+    case decodingError
+    case encodingError
     case networkError(Error)
     case notConnected
     case timeout
-    case unknown
+    case websocketError(String)
     
     var errorDescription: String? {
         switch self {
         case .invalidURL:
             return "Неверный URL"
-        case .noData:
-            return "Нет данных"
-        case .decodingError:
-            return "Ошибка декодирования данных"
-        case .encodingError:
-            return "Ошибка кодирования данных"
+        case .invalidResponse:
+            return "Неверный ответ от сервера"
         case .unauthorized:
-            return "Не авторизован"
+            return "Необходима авторизация"
         case .forbidden:
             return "Доступ запрещен"
         case .notFound:
             return "Ресурс не найден"
-        case .serverError(let code):
-            return "Ошибка сервера: \(code)"
+        case .validationError(let message):
+            return "Ошибка валидации: \(message)"
+        case .serverError:
+            return "Ошибка сервера"
+        case .httpError(let statusCode):
+            return "HTTP ошибка: \(statusCode)"
+        case .decodingError:
+            return "Ошибка декодирования ответа"
+        case .encodingError:
+            return "Ошибка кодирования запроса"
         case .networkError(let error):
-            return "Сетевая ошибка: \(error.localizedDescription)"
+            return "Ошибка сети: \(error.localizedDescription)"
         case .notConnected:
-            return "Нет соединения"
+            return "Нет соединения с сервером"
         case .timeout:
             return "Превышено время ожидания"
-        case .unknown:
-            return "Неизвестная ошибка"
+        case .websocketError(let message):
+            return "WebSocket ошибка: \(message)"
         }
     }
     
