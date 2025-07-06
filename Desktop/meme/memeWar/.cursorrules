@@ -1,0 +1,611 @@
+# 🎯 iOS Мем Карточная Игра - Правила разработки (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+
+## 📱 ОСНОВНЫЕ ТЕХНОЛОГИИ
+- **SwiftUI** - основной UI framework
+- **Combine** - реактивное программирование  
+- **URLSession** - HTTP запросы
+- **WebSocket** - реальное время для игровых комнат
+- **Keychain** - безопасное хранение токенов
+- **Nuke/Kingfisher** - кэширование изображений
+- **TestFlight** - для бета-тестирования
+
+## 🏗️ АРХИТЕКТУРНЫЕ ПРИНЦИПЫ
+
+### MVVM-S: Model-View-ViewModel-State
+- **Models** - Структуры данных (Codable)
+- **Views** - SwiftUI интерфейс. View — это отражение состояния (State)
+- **ViewModels** - Управляет бизнес-логикой и меняет состояние
+- **State** - Единственный источник правды для View. `@Published var gameState: GameState` — ключевой паттерн
+
+### Принцип работы с WebSocket в UI
+1. WebSocketManager получает событие от сервера
+2. Передает его в соответствующий ViewModel (например, GameViewModel)
+3. ViewModel обновляет свою модель состояния (State)
+4. View, подписанный на изменения состояния, автоматически перерисовывается
+5. **ЗАПРЕЩЕНО**: View не должен напрямую взаимодействовать с WebSocketManager
+
+### Dependency Injection
+- Используй протоколы для всех зависимостей (AuthRepositoryProtocol, etc.)
+- Внедряй зависимости через инициализаторы
+- Создавай моки для тестирования
+
+### Реактивное Программирование
+- Используй `@Published` для состояния
+- Combine или `async/await` для асинхронных операций
+- ObservableObject для ViewModels
+
+## 📁 СТРУКТУРА ПРОЕКТА
+
+```
+MemeCardGame/
+├── App/
+│   ├── MemeCardGameApp.swift
+│   └── AppStateObserver.swift
+├── Core/
+│   ├── Network/
+│   │   ├── NetworkManager.swift
+│   │   ├── APIService.swift
+│   │   ├── WebSocketManager.swift
+│   │   └── NetworkError.swift
+│   ├── Storage/
+│   │   ├── TokenManager.swift
+│   │   └── KeychainManager.swift
+│   ├── Cache/
+│   │   └── ImageCacheManager.swift
+│   ├── Utils/
+│   │   ├── Constants.swift
+│   │   ├── Extensions/
+│   │   └── Helpers/
+│   └── DI/
+│       └── DependencyContainer.swift
+├── Models/
+│   ├── Auth/
+│   │   ├── AuthModels.swift
+│   │   └── UserModels.swift
+│   ├── Cards/
+│   │   └── CardModels.swift
+│   ├── Game/
+│   │   ├── RoomModels.swift
+│   │   ├── GameState.swift
+│   │   └── WebSocketEvents.swift
+│   └── Common/
+│       └── BaseModels.swift
+├── Repositories/
+│   ├── AuthRepository.swift
+│   ├── CardsRepository.swift
+│   ├── UserRepository.swift
+│   ├── GameRepository.swift
+│   └── RoomRepository.swift
+├── Services/
+│   ├── AuthService.swift
+│   ├── CardsService.swift
+│   ├── GameService.swift
+│   └── WebSocketService.swift
+├── ViewModels/
+│   ├── Auth/
+│   │   ├── LoginViewModel.swift
+│   │   └── ProfileViewModel.swift
+│   ├── Game/
+│   │   ├── GameViewModel.swift
+│   │   └── RoomViewModel.swift
+│   └── Common/
+│       └── BaseViewModel.swift
+├── Views/
+│   ├── Auth/
+│   │   ├── LoginView.swift
+│   │   └── ProfileSetupView.swift
+│   ├── Game/
+│   │   ├── GameView.swift
+│   │   ├── RoomView.swift
+│   │   ├── VotingView.swift
+│   │   └── GameResultView.swift
+│   ├── Common/
+│   │   ├── LoadingView.swift
+│   │   ├── ErrorView.swift
+│   │   └── AsyncImageView.swift
+│   └── Main/
+│       ├── MainTabView.swift
+│       └── HomeView.swift
+└── Resources/
+    ├── Assets.xcassets
+    ├── Localizable.strings
+    └── Info.plist
+```
+
+## 🔧 ПРАВИЛА РАЗРАБОТКИ
+
+### SwiftUI Best Practices
+- Используй `@StateObject` для создания ViewModel
+- `@ObservedObject` для передачи ViewModel в дочерние View
+- `@EnvironmentObject` для глобальных зависимостей (например, TokenManager)
+- `@State` только для простого, локального состояния View (например, isPresented)
+
+### Безопасность
+- **НИКОГДА** не храни токены или чувствительные данные в UserDefaults. Используй Keychain
+- **ВСЕГДА** используй HTTPS (wss:// для WebSocket) в production
+- Реализуй глобальный обработчик ошибки 401 Unauthorized для автоматического разлогина
+
+### Производительность
+- **КЭШИРУЙ ИЗОБРАЖЕНИЯ**. Это критически важно для карточной игры
+- Избегай тяжелых вычислений в body View. Выноси их в ViewModel или используй lazy контейнеры
+
+## 🌐 API ИНТЕГРАЦИЯ
+
+### Базовые URL
+```swift
+// Constants.swift
+struct APIConstants {
+    static let baseURL = "http://localhost:8000"  // Development
+    static let wsBaseURL = "ws://localhost:8000"  // Development
+    
+    // Endpoints
+    struct Endpoints {
+        // Auth
+        static let deviceAuth = "/auth/device"
+        static let completeProfile = "/auth/complete-profile"
+        static let me = "/auth/me"
+        static let logout = "/auth/logout"
+        
+        // Cards
+        static let allCards = "/cards"
+        static let assignStarterCards = "/cards/assign-starter-cards"
+        static let myCards = "/cards/my-cards"
+        static let forGameRound = "/cards/for-game-round"
+        static let cardsByType = "/cards/by-type"
+        static let azureStatus = "/cards/azure/status"
+        static let azureLoadByType = "/cards/azure/load"
+        static let azureLoadAll = "/cards/azure/load-all"
+        static let cardStatistics = "/cards/statistics"
+        static let adminCreateBatch = "/cards/admin/create-batch"
+        static let awardWinnerCard = "/cards/award-winner-card"
+        
+        // Users
+        static let leaderboard = "/users"
+        static let checkNickname = "/users/check-nickname"
+        static let myStats = "/users/me/stats"
+        static let getUserById = "/users"
+        static let updateProfile = "/users/me"
+        static let updateRating = "/users/{user_id}/rating"
+        static let getUserRank = "/users/{user_id}/rank"
+        
+        // Rooms
+        static let createRoom = "/rooms"
+        static let availableRooms = "/rooms/available"
+        static let myRoom = "/rooms/my-room"
+        static let roomDetails = "/rooms/{room_id}"
+        static let joinRoom = "/rooms/{room_id}/join"
+        static let joinByCode = "/rooms/join-by-code"
+        static let quickMatch = "/rooms/quick-match"
+        static let leaveRoom = "/rooms/{room_id}/leave"
+        static let startGame = "/rooms/{room_id}/start-game"
+        static let roomStats = "/rooms/stats/summary"
+        
+        // Games
+        static let myCardsForGame = "/games/my-cards-for-game"
+        static let generateSituations = "/games/situations/generate"
+        static let currentGame = "/games/rooms/{room_id}/current-game"
+        static let gameDetails = "/games/{game_id}"
+        static let createRound = "/games/{game_id}/rounds"
+        static let submitChoice = "/games/rounds/{round_id}/choices"
+        static let startVoting = "/games/rounds/{round_id}/voting/start"
+        static let submitVote = "/games/rounds/{round_id}/votes"
+        static let roundResults = "/games/rounds/{round_id}/results"
+        static let roundChoices = "/games/rounds/{round_id}/choices"
+        static let endGame = "/games/{game_id}/end"
+        static let pingRoom = "/games/rooms/{room_id}/ping"
+        static let playersStatus = "/games/rooms/{room_id}/players-status"
+        static let checkTimeouts = "/games/rooms/{room_id}/check-timeouts"
+        static let actionStatus = "/games/rounds/{round_id}/action-status"
+        
+        // WebSocket
+        static let websocket = "/websocket/ws"
+        static let wsStats = "/websocket/ws/stats"
+        static let wsBroadcast = "/websocket/ws/broadcast/{room_id}"
+    }
+}
+```
+
+### Правильные модели данных
+```swift
+// Models/Auth/AuthModels.swift
+struct AuthResponse: Codable {
+    let access_token: String
+    let token_type: String
+    let user: UserResponse
+    let is_new_user: Bool  // ✅ Правильно!
+}
+
+struct DeviceAuthRequest: Codable {
+    let device_id: String
+}
+
+// Models/Auth/UserModels.swift
+enum Gender: String, Codable, CaseIterable {
+    case male = "male"
+    case female = "female"
+    case other = "other"
+}
+
+struct UserResponse: Codable {
+    let id: Int
+    let device_id: String
+    let nickname: String?
+    let birth_date: Date?  // ✅ Date, не String!
+    let gender: Gender?    // ✅ enum, не String!
+    let rating: Double     // ✅ Double, не Int!
+    let created_at: Date
+    let age: Int?          // ✅ Вычисляемое поле
+    let is_profile_complete: Bool  // ✅ Статус профиля
+}
+
+struct UserProfileCreate: Codable {
+    let nickname: String
+    let birth_date: Date
+    let gender: Gender
+}
+
+// Models/Cards/CardModels.swift
+enum CardType: String, Codable {
+    case starter = "starter"
+    case standard = "standard"
+    case unique = "unique"
+}
+
+struct CardResponse: Codable, Identifiable {
+    let id: String
+    let name: String
+    let image_url: String
+    let card_type: CardType
+    let is_unique: Bool
+    let description: String?
+    let created_at: Date
+    let is_starter_card: Bool
+    let is_standard_card: Bool
+    let is_unique_card: Bool
+}
+
+// Models/Game/RoomModels.swift
+enum RoomStatus: String, Codable {
+    case waiting = "waiting"
+    case playing = "playing"
+    case finished = "finished"
+}
+
+struct RoomResponse: Codable, Identifiable {
+    let id: Int
+    let creator_id: Int
+    let max_players: Int
+    let status: RoomStatus
+    let room_code: String?
+    let is_public: Bool
+    let age_group: String?
+    let created_at: Date
+    let current_players: Int
+}
+
+struct RoomDetailResponse: Codable {
+    let room: RoomResponse
+    let participants: [RoomParticipantResponse]
+    let creator_nickname: String
+    let can_start_game: Bool
+}
+
+struct RoomParticipantResponse: Codable, Identifiable {
+    let id: Int
+    let room_id: Int
+    let user_id: Int
+    let user_nickname: String
+    let joined_at: Date
+    let status: String
+}
+
+// Models/Game/WebSocketEvents.swift
+// ✅ ПРАВИЛЬНАЯ СТРУКТУРА WebSocket СООБЩЕНИЙ
+struct WebSocketMessage: Codable {
+    let action: String
+    let data: [String: Any]
+    
+    enum CodingKeys: String, CodingKey {
+        case action
+        case data
+    }
+    
+    init(action: String, data: [String: Any] = [:]) {
+        self.action = action
+        self.data = data
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        action = try container.decode(String.self, forKey: .action)
+        data = try container.decode([String: Any].self, forKey: .data)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(action, forKey: .action)
+        try container.encode(data, forKey: .data)
+    }
+}
+
+// Поддерживаемые WebSocket действия
+enum WebSocketAction: String, CaseIterable {
+    case ping = "ping"
+    case joinRoom = "join_room"
+    case leaveRoom = "leave_room"
+    case startGame = "start_game"
+    case startRound = "start_round"
+    case submitCardChoice = "submit_card_choice"
+    case submitVote = "submit_vote"
+    case getGameState = "get_game_state"
+    case getRoundCards = "get_round_cards"
+    case getChoicesForVoting = "get_choices_for_voting"
+}
+
+// WebSocket события от сервера
+enum WebSocketEventType: String, Codable {
+    case pong = "pong"
+    case roomStateChanged = "room_state_changed"
+    case gameStarted = "game_started"
+    case roundStarted = "round_started"
+    case votingStarted = "voting_started"
+    case roundEnded = "round_ended"
+    case gameEnded = "game_ended"
+    case playerJoined = "player_joined"
+    case playerLeft = "player_left"
+    case timeoutWarning = "timeout_warning"
+    case playerTimeout = "player_timeout"
+}
+
+struct WebSocketEvent: Codable {
+    let type: WebSocketEventType
+    let data: [String: Any]
+    let timestamp: String
+}
+```
+
+## 🎮 WEBSOCKET ИНТЕГРАЦИЯ
+
+### ПРАВИЛЬНАЯ РАБОТА С WebSocket
+```swift
+// Services/WebSocketService.swift
+class WebSocketService: ObservableObject {
+    private var webSocket: URLSessionWebSocketTask?
+    private let baseURL: String
+    private let tokenManager: TokenManager
+    
+    @Published var isConnected = false
+    @Published var lastError: String?
+    
+    init(baseURL: String, tokenManager: TokenManager) {
+        self.baseURL = baseURL
+        self.tokenManager = tokenManager
+    }
+    
+    func connect(roomId: Int? = nil) async throws {
+        guard let token = tokenManager.getToken() else {
+            throw NetworkError.unauthorized
+        }
+        
+        var urlComponents = URLComponents(string: "\(baseURL)/websocket/ws")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "token", value: token)
+        ]
+        
+        if let roomId = roomId {
+            urlComponents.queryItems?.append(URLQueryItem(name: "room_id", value: "\(roomId)"))
+        }
+        
+        guard let url = urlComponents.url else {
+            throw NetworkError.invalidURL
+        }
+        
+        let request = URLRequest(url: url)
+        let session = URLSession(configuration: .default)
+        webSocket = session.webSocketTask(with: request)
+        
+        webSocket?.resume()
+        isConnected = true
+        
+        // Начинаем слушать сообщения
+        await receiveMessages()
+    }
+    
+    func sendMessage(_ message: WebSocketMessage) async throws {
+        guard let webSocket = webSocket else {
+            throw NetworkError.notConnected
+        }
+        
+        let data = try JSONEncoder().encode(message)
+        let webSocketMessage = URLSessionWebSocketTask.Message.data(data)
+        
+        try await webSocket.send(webSocketMessage)
+    }
+    
+    private func receiveMessages() async {
+        guard let webSocket = webSocket else { return }
+        
+        do {
+            let message = try await webSocket.receive()
+            
+            switch message {
+            case .data(let data):
+                let event = try JSONDecoder().decode(WebSocketEvent.self, from: data)
+                await handleWebSocketEvent(event)
+            case .string(let string):
+                if let data = string.data(using: .utf8) {
+                    let event = try JSONDecoder().decode(WebSocketEvent.self, from: data)
+                    await handleWebSocketEvent(event)
+                }
+            @unknown default:
+                break
+            }
+            
+            // Продолжаем слушать
+            await receiveMessages()
+            
+        } catch {
+            lastError = error.localizedDescription
+            isConnected = false
+        }
+    }
+    
+    @MainActor
+    private func handleWebSocketEvent(_ event: WebSocketEvent) {
+        // Обрабатываем события и уведомляем ViewModels
+        switch event.type {
+        case .roomStateChanged:
+            NotificationCenter.default.post(name: .roomStateChanged, object: event.data)
+        case .gameStarted:
+            NotificationCenter.default.post(name: .gameStarted, object: event.data)
+        case .roundStarted:
+            NotificationCenter.default.post(name: .roundStarted, object: event.data)
+        case .votingStarted:
+            NotificationCenter.default.post(name: .votingStarted, object: event.data)
+        case .roundEnded:
+            NotificationCenter.default.post(name: .roundEnded, object: event.data)
+        case .gameEnded:
+            NotificationCenter.default.post(name: .gameEnded, object: event.data)
+        case .playerJoined:
+            NotificationCenter.default.post(name: .playerJoined, object: event.data)
+        case .playerLeft:
+            NotificationCenter.default.post(name: .playerLeft, object: event.data)
+        case .timeoutWarning:
+            NotificationCenter.default.post(name: .timeoutWarning, object: event.data)
+        case .playerTimeout:
+            NotificationCenter.default.post(name: .playerTimeout, object: event.data)
+        case .pong:
+            // Обрабатываем ping/pong для поддержания соединения
+            break
+        }
+    }
+    
+    func disconnect() {
+        webSocket?.cancel()
+        webSocket = nil
+        isConnected = false
+    }
+}
+
+// Расширения для NotificationCenter
+extension Notification.Name {
+    static let roomStateChanged = Notification.Name("roomStateChanged")
+    static let gameStarted = Notification.Name("gameStarted")
+    static let roundStarted = Notification.Name("roundStarted")
+    static let votingStarted = Notification.Name("votingStarted")
+    static let roundEnded = Notification.Name("roundEnded")
+    static let gameEnded = Notification.Name("gameEnded")
+    static let playerJoined = Notification.Name("playerJoined")
+    static let playerLeft = Notification.Name("playerLeft")
+    static let timeoutWarning = Notification.Name("timeoutWarning")
+    static let playerTimeout = Notification.Name("playerTimeout")
+}
+```
+
+## 🧪 ТЕСТИРОВАНИЕ
+
+### Unit-тесты (XCTest)
+- Цель: Проверить логику ViewModel в изоляции от сети и UI
+- Создавай моки для всех зависимостей
+- Тестируй API и WebSocket события через моки
+
+### UI-тесты (XCUITest)
+- Цель: Проверить, что UI правильно отображает состояние
+- Запускай приложение с моковыми данными
+- Проверяй наличие элементов и реакции на действия
+
+### End-to-End и Бета-тестирование (TestFlight)
+- Внутреннее тестирование (до 100 чел.)
+- Внешнее тестирование (до 10 000 чел.)
+- Встроенная аналитика для игровых событий
+
+## 📋 ЧЕКЛИСТ РАЗРАБОТКИ
+
+### Обязательные требования:
+- [ ] Все сетевые запросы используют `async/await`
+- [ ] Все ошибки обрабатываются и показываются пользователю
+- [ ] Токены хранятся в Keychain
+- [ ] ViewModels управляют состоянием через `@Published` переменные
+- [ ] WebSocket-события строго типизированы
+- [ ] Реализовано кэширование изображений
+- [ ] Правильные типы данных (Date, Double, enum)
+
+### Рекомендации:
+- [ ] Написаны unit-тесты для всех ключевых ViewModel'ей
+- [ ] Настроен CI/CD для автоматической сборки
+- [ ] Используется SwiftLint для качества кода
+- [ ] Встроена базовая аналитика
+
+## 🚀 ПЛАН РАЗРАБОТКИ
+
+### Фаза 1: Базовая инфраструктура
+1. Создать базовую структуру проекта
+2. Реализовать NetworkManager и TokenManager
+3. Создать модели данных (Auth, User, Card)
+4. Реализовать AuthRepository и LoginViewModel
+5. Создать LoginView и ProfileSetupView
+
+### Фаза 2: Игровая логика
+1. Реализовать CardsRepository и RoomRepository
+2. Создать GameRepository и WebSocketManager
+3. Реализовать игровые ViewModels
+4. Создать игровые Views
+
+### Фаза 3: Полировка и тестирование
+1. Добавить кэширование изображений
+2. Написать unit-тесты
+3. Настроить CI/CD
+4. Подготовить к TestFlight
+
+## 🎯 ПРИНЦИПЫ КОДИРОВАНИЯ
+
+1. **Читаемость**: Код должен быть понятным и самодокументируемым
+2. **Тестируемость**: Все компоненты должны быть легко тестируемыми
+3. **Производительность**: Оптимизируй для плавного игрового процесса
+4. **Безопасность**: Защищай пользовательские данные
+5. **Масштабируемость**: Архитектура должна поддерживать рост проекта
+
+## 🔄 РАБОЧИЙ ПРОЦЕСС
+
+1. **Создание фичи**: Начинай с модели данных, затем Repository, ViewModel, View
+2. **Тестирование**: Пиши тесты параллельно с кодом
+3. **Рефакторинг**: Постоянно улучшай код, следуя принципам SOLID
+4. **Документация**: Комментируй сложную логику и API интерфейсы
+
+## 🚨 КРИТИЧЕСКИЕ ПРАВИЛА
+
+- **НИКОГДА** не используй force unwrapping (`!`) без явной необходимости
+- **ВСЕГДА** обрабатывай ошибки сети и показывай пользователю понятные сообщения
+- **ОБЯЗАТЕЛЬНО** используй строгую типизацию для WebSocket событий
+- **ПОМНИ** о производительности при работе с изображениями и анимациями
+- **ТЕСТИРУЙ** на реальных устройствах, не только в симуляторе
+- **ПРОВЕРЯЙ** соответствие типов данных с бэкендом (Date vs String, Double vs Int)
+
+## ✅ ИСПРАВЛЕННЫЕ ОШИБКИ
+
+### 1. AuthResponse
+- ❌ `profile_completed: Bool` → ✅ `is_new_user: Bool`
+
+### 2. UserResponse
+- ❌ `birth_date: String?` → ✅ `birth_date: Date?`
+- ❌ `gender: String?` → ✅ `gender: Gender?`
+- ❌ `rating: Int` → ✅ `rating: Double`
+- ✅ Добавлены: `age: Int?`, `is_profile_complete: Bool`
+
+### 3. WebSocket структура
+- ❌ `type: GameEventType` → ✅ `action: String`
+- ❌ `payload: T` → ✅ `data: [String: Any]`
+
+### 4. WebSocket события
+- ❌ События через enum → ✅ Action-based подход
+- ✅ Правильная обработка ping/pong
+- ✅ Правильная структура сообщений
+
+### 5. Эндпоинты
+- ✅ Все 47 эндпоинтов корректно указаны
+- ✅ Правильные HTTP методы
+- ✅ Правильные пути
+
+## 🎉 ГОТОВО К РАЗРАБОТКЕ!
+
+Теперь документация полностью соответствует реальному бэкенду и готова для iOS разработки! 🚀 

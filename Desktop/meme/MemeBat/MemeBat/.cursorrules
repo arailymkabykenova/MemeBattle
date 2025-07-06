@@ -1,0 +1,655 @@
+# 🎮 Cursor Rules для iOS - Мем Карточная Игра
+
+## 📋 Общая информация
+- **Проект:** Мем Карточная Игра (Meme Card Game)
+- **Платформа:** iOS (SwiftUI + MVVM + Swift Concurrency)
+- **Минимальная версия:** iOS 16.0+ (для NavigationStack и последних SwiftUI API)
+- **Архитектура:** MVVM с Swift Concurrency
+- **Сетевой слой:** REST API + WebSocket для игрового процесса
+- **Аутентификация:** Game Center (обязательно)
+- **UI/UX:** Сочный минимализм (Juicy Minimalism) с микро-анимациями
+
+## 🏗️ Архитектура и структура проекта
+
+### Структура папок
+```
+MemeGame/
+├── App/
+│   ├── MemeGameApp.swift
+│   └── AppDelegate.swift
+├── Core/
+│   ├── Network/
+│   │   ├── APIConfig.swift
+│   │   ├── NetworkManager.swift
+│   │   ├── WebSocketManager.swift
+│   │   └── Models/
+│   ├── Services/
+│   │   ├── AuthService.swift
+│   │   ├── RoomService.swift
+│   │   ├── CardService.swift
+│   │   └── GameService.swift
+│   ├── Models/
+│   │   ├── User.swift
+│   │   ├── Card.swift
+│   │   ├── Room.swift
+│   │   └── Game.swift
+│   └── Utils/
+│       ├── Extensions/
+│       ├── Constants.swift
+│       └── Helpers.swift
+├── Features/
+│   ├── Authentication/
+│   ├── Rooms/
+│   ├── Game/
+│   ├── Cards/
+│   └── Profile/
+├── Resources/
+│   ├── Assets.xcassets
+│   ├── Localizable.strings
+│   └── Info.plist
+└── Tests/
+    ├── UnitTests/
+    └── UITests/
+```
+
+### Принципы архитектуры
+- **MVVM:** Используй MVVM для всех экранов
+- **Swift Concurrency:** Используй async/await вместо completion handlers
+- **Dependency Injection:** Внедряй зависимости через инициализаторы
+- **Protocol-Oriented:** Используй протоколы для абстракции
+- **Single Responsibility:** Каждый класс должен иметь одну ответственность
+
+## 🌐 Сетевой слой и интеграция с бэкендом
+
+### API Configuration
+```swift
+// Всегда используй эти константы для URL
+struct APIConfig {
+    static let baseURL = "http://localhost:8000" // Development
+    static let wsURL = "ws://localhost:8000/ws"  // Development
+    
+    // Production URLs (заменить при деплое)
+    // static let baseURL = "https://your-domain.com"
+    // static let wsURL = "wss://your-domain.com/ws"
+}
+```
+
+### Network Manager
+- Используй `NetworkManager.shared` для всех HTTP запросов
+- Всегда передавай JWT токен в заголовке `Authorization: Bearer <token>`
+- Используй `User-Agent: MemeGame-iOS/1.0.0`
+- Обрабатывай все HTTP статус коды (200, 201, 400, 401, 403, 404, 422, 429, 500)
+- Используй структуру ошибок из API документации
+
+### WebSocket
+- Подключайся к WebSocket только после успешной аутентификации
+- URL: `ws://localhost:8000/ws?token=<jwt_token>&room_id=<room_id>`
+- Обрабатывай все события из документации
+- Реализуй автоматическое переподключение при потере соединения
+- Используй ping/pong для проверки соединения
+
+### Логика комнат и возрастных групп
+- **Публичные комнаты:** Подбираются по `age_group` (child, teen, adult)
+- **Приватные комнаты:** Имеют `age_group="mixed"` и свободны от возрастных ограничений
+- **AI генерация:** Для `mixed` комнат AI создает ситуации из всех категорий, создавая "веселый хаос"
+- **Валидация:** Проверяй соответствие возраста пользователя и возрастной группы комнаты
+
+### API Документация
+- **Swagger UI:** Доступен по адресу `http://localhost:8000/docs`
+- **OpenAPI Spec:** `http://localhost:8000/openapi.json`
+- **Статус сервиса:** `http://localhost:8000/health`
+
+## 🔐 Аутентификация
+
+### Game Center
+- **Обязательно:** Используй только Game Center для аутентификации
+- **Эндпоинт:** `POST /api/v1/auth/login-game-center`
+- **Данные:** Передавай все поля из Game Center (player_id, public_key_url, signature, salt, timestamp)
+- **Токен:** Сохраняй JWT токен в Keychain для безопасности
+- **Срок действия:** 7 дней (604800 секунд)
+
+### Структура запроса аутентификации
+```swift
+struct GameCenterAuthRequest: Codable {
+    let player_id: String
+    let public_key_url: String
+    let signature: String
+    let salt: String
+    let timestamp: String
+}
+```
+
+## 👤 Пользователи и профили
+
+### Модель пользователя
+```swift
+struct User: Codable {
+    let id: Int
+    let game_center_player_id: String
+    let nickname: String
+    let birth_date: String
+    let gender: String
+    let rating: Double
+    let created_at: String
+    let last_seen: String?
+    let statistics: UserStatistics?
+}
+
+struct UserStatistics: Codable {
+    let games_played: Int
+    let games_won: Int
+    let total_score: Int
+    let cards_collected: Int
+    let unique_cards: Int
+}
+```
+
+### Валидация
+- **Никнейм:** 3-20 символов, только буквы, цифры, подчеркивания
+- **Возраст:** Минимум 6 лет (проверяется по birth_date)
+- **Рейтинг:** 0-3000, рассчитывается по системе ELO
+
+## 🃏 Карты
+
+### Модель карты
+```swift
+struct Card: Codable {
+    let id: Int
+    let name: String
+    let description: String
+    let image_url: String
+    let type: String
+    let rarity: String
+    let is_unique: Bool
+    let created_at: String
+}
+
+struct UserCard: Codable {
+    let id: Int
+    let name: String
+    let image_url: String
+    let type: String
+    let rarity: String
+    let is_unique: Bool
+    let obtained_at: String
+}
+```
+
+### Типы и редкость
+- **Типы:** `standard`, `unique`
+- **Редкость:** `common`, `rare`, `epic`, `legendary`
+
+### Пагинация
+- **Метод:** `page/size`
+- **Размер страницы:** 20 (максимум 50)
+- **Параметры:** `?page=1&size=20`
+
+## 🏠 Игровые комнаты
+
+### Модель комнаты
+```swift
+struct Room: Codable {
+    let id: Int
+    let creator_id: Int
+    let max_players: Int
+    let status: String
+    let room_code: String
+    let is_public: Bool
+    let age_group: String
+    let created_at: String
+    let current_players: Int
+    let participants: [RoomParticipant]?
+    let creator_nickname: String?
+    let can_start_game: Bool?
+}
+
+struct RoomParticipant: Codable {
+    let id: Int
+    let user_id: Int
+    let user_nickname: String
+    let joined_at: String
+    let status: String
+}
+```
+
+### Статусы комнат
+- `waiting` - Ожидание игроков
+- `playing` - Игра в процессе
+- `finished` - Игра завершена
+- `cancelled` - Игра отменена
+
+### Возрастные группы
+- `child` (6-12 лет)
+- `teen` (13-17 лет)
+- `adult` (18+ лет)
+
+## 🎮 Игровой процесс (WebSocket)
+
+### Формат сообщений
+```swift
+struct WebSocketMessage: Codable {
+    let action: String
+    let data: [String: Any]
+    let timestamp: String?
+    let room_id: Int?
+}
+```
+
+### События от сервера (обязательно обрабатывать)
+- `player_joined` - Игрок присоединился
+- `player_left` - Игрок покинул
+- `game_started` - Игра началась
+- `round_started` - Раунд начался
+- `card_played` - Карта сыграна
+- `voting_started` - Началось голосование
+- `vote_submitted` - Голос подан
+- `round_ended` - Раунд завершен
+- `game_ended` - Игра завершена
+- `error` - Ошибка
+- `timer_update` - Обновление таймера
+- `connection_lost` - Потеря соединения
+
+### События от клиента
+- `join_room` - Присоединение к комнате
+- `leave_room` - Выход из комнаты
+- `play_card` - Сыграть карту
+- `submit_vote` - Подать голос
+- `ping` - Проверка соединения
+- `pong` - Ответ на ping
+
+## 🌍 Локализация
+
+### Поддержка языков
+- **Основной:** `ru-RU` (русский)
+- **Дополнительный:** `en-US` (английский)
+- **Заголовок:** `Accept-Language: ru-RU, en-US`
+
+### Локализованный контент
+- Названия и описания карт
+- Тексты игровых ситуаций
+- Сообщения об ошибках
+- UI элементы
+
+## 📱 SwiftUI и UI
+
+### Принципы UI/UX - Сочный минимализм (Juicy Minimalism)
+- **Минимализм:** Простой и понятный интерфейс с яркими акцентами
+- **Адаптивность:** Поддержка всех размеров iPhone
+- **Доступность:** VoiceOver, Dynamic Type, контрастность
+- **Темная тема:** Поддержка dark mode с адаптивными цветами
+- **Микро-анимации:** Плавные переходы с haptic feedback
+
+### Динамический фон и эффекты
+```swift
+// Анимированный градиент из 4-5 пастельных цветов
+extension LinearGradient {
+    static let animatedBackground = LinearGradient(
+        colors: [
+            Color(red: 1.0, green: 0.8, blue: 0.7), // Персиковый
+            Color(red: 0.9, green: 0.7, blue: 1.0), // Сиреневый
+            Color(red: 0.7, green: 0.9, blue: 1.0), // Голубой
+            Color(red: 1.0, green: 0.9, blue: 0.7), // Желтый
+            Color(red: 0.9, green: 1.0, blue: 0.8)  // Мятный
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
+// Эффект параллакса для фоновых изображений
+struct ParallaxBackground: View {
+    @State private var offset = CGSize.zero
+    
+    var body: some View {
+        Image("background_cats")
+            .offset(offset)
+            .onAppear {
+                // Используй Core Motion для отслеживания наклона устройства
+            }
+    }
+}
+```
+
+### Микро-анимации и haptic feedback
+```swift
+// Обязательные haptic feedback для ключевых действий
+extension UIImpactFeedbackGenerator {
+    static func playSelection() {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+    
+    static func playSuccess() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+}
+
+// Плавные переходы для элементов
+extension AnyTransition {
+    static let juicyAppear = AnyTransition.scale(scale: 0.8)
+        .combined(with: .opacity)
+        .animation(.spring(response: 0.6, dampingFraction: 0.8))
+}
+```
+
+### Стилизация элементов
+```swift
+// Неоновое свечение для иконок
+extension Image {
+    func neonGlow(color: Color = .blue, radius: CGFloat = 5) -> some View {
+        self
+            .shadow(color: color, radius: radius)
+            .shadow(color: color.opacity(0.5), radius: radius * 2)
+    }
+}
+
+// Эффект матового стекла (Glassmorphism)
+struct GlassmorphismView: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 20)
+            .fill(.ultraThinMaterial)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(.white.opacity(0.2), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+    }
+}
+```
+
+### Игровой стол и физика карт
+```swift
+// Анимация "вылета" карт из колоды
+struct CardDeckView: View {
+    @State private var cards: [Card] = []
+    @State private var isDealing = false
+    
+    var body: some View {
+        ZStack {
+            // Фон с эффектом матового стекла
+            GlassmorphismView()
+            
+            // Карты с физикой
+            ForEach(cards.indices, id: \.self) { index in
+                CardView(card: cards[index])
+                    .offset(x: isDealing ? CGFloat(index * 20) : 0)
+                    .rotationEffect(.degrees(isDealing ? Double(index * 5) : 0))
+                    .animation(
+                        .spring(response: 0.6, dampingFraction: 0.8)
+                        .delay(Double(index) * 0.1),
+                        value: isDealing
+                    )
+            }
+        }
+    }
+}
+```
+
+### Lottie анимации
+- **Загрузка:** Используй Lottie вместо стандартных спиннеров
+- **Победа:** Анимированные эффекты при выигрыше
+- **Переходы:** Плавные переходы между экранами
+- **Файлы:** Храни Lottie файлы в `Resources/Animations/`
+
+### Компоненты
+- Используй системные компоненты iOS как основу
+- Создавай переиспользуемые компоненты с анимациями
+- Следуй Apple Human Interface Guidelines
+- Стилизуй SF Symbols с градиентами и эффектами
+
+### Цветовая схема
+```swift
+extension Color {
+    static let primaryColor = Color("PrimaryColor")
+    static let secondaryColor = Color("SecondaryColor")
+    static let backgroundColor = Color("BackgroundColor")
+    static let cardBackground = Color("CardBackground")
+    static let textPrimary = Color("TextPrimary")
+    static let textSecondary = Color("TextSecondary")
+    
+    // Дополнительные цвета для анимаций
+    static let accentGradient = LinearGradient(
+        colors: [.blue, .purple],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+}
+```
+
+## 🔧 Код и стиль
+
+### Swift Concurrency
+```swift
+// ✅ Правильно
+func fetchUser() async throws -> User {
+    return try await networkManager.makeRequest(endpoint: "/api/v1/users/profile")
+}
+
+// ❌ Неправильно
+func fetchUser(completion: @escaping (Result<User, Error>) -> Void) {
+    // completion handlers
+}
+```
+
+### Error Handling
+```swift
+// ✅ Правильно
+do {
+    let user = try await authService.authenticateWithGameCenter()
+    // Обработка успеха
+} catch AuthError.gameCenterNotAvailable {
+    // Специфичная обработка
+} catch {
+    // Общая обработка ошибок
+}
+```
+
+### MVVM Pattern
+```swift
+@MainActor
+class GameViewModel: ObservableObject {
+    @Published var gameState: GameState = .idle
+    @Published var currentRoom: Room?
+    
+    private let roomService: RoomService
+    
+    init(roomService: RoomService) {
+        self.roomService = roomService
+    }
+    
+    func joinRoom(roomId: Int) async {
+        do {
+            currentRoom = try await roomService.joinRoom(roomId: roomId)
+            gameState = .inRoom
+        } catch {
+            // Обработка ошибки
+        }
+    }
+}
+```
+
+### Dependency Injection
+```swift
+// ✅ Правильно - Избегай синглтонов для улучшения тестируемости
+class RoomService {
+    private let networkManager: NetworkManager
+    
+    init(networkManager: NetworkManager) {
+        self.networkManager = networkManager
+    }
+}
+
+// ❌ Неправильно - Синглтоны усложняют тестирование
+class RoomService {
+    private let networkManager = NetworkManager.shared
+}
+
+// ✅ Правильно - Используй протоколы для абстракции
+protocol NetworkManagerProtocol {
+    func makeRequest<T: Codable>(endpoint: String) async throws -> T
+}
+
+class RoomService {
+    private let networkManager: NetworkManagerProtocol
+    
+    init(networkManager: NetworkManagerProtocol) {
+        self.networkManager = networkManager
+    }
+}
+```
+
+## 🧪 Тестирование
+
+### Unit Tests
+- Тестируй все сервисы и модели
+- Используй моки для сетевых запросов
+- Тестируй обработку ошибок
+- Покрытие кода минимум 80%
+
+### UI Tests
+- Тестируй основные пользовательские сценарии
+- Тестируй аутентификацию через Game Center
+- Тестируй игровой процесс
+- Тестируй WebSocket соединение
+
+### Test Data
+- Используй тестовые эндпоинты для разработки
+- Создавай моки данных
+- Используй Preview для SwiftUI
+
+## 📦 Зависимости
+
+### Обязательные
+- **GameKit** - для Game Center аутентификации
+- **Foundation** - для сетевых запросов
+- **SwiftUI** - для UI
+- **Combine** - для реактивного программирования
+
+### Рекомендуемые
+- **KeychainAccess** - для безопасного хранения токенов
+- **Kingfisher** - для загрузки изображений
+- **Lottie** - для анимаций (обязательно для загрузки и переходов)
+- **Core Motion** - для эффекта параллакса
+- **SwiftUI Charts** - для статистики игрока (iOS 16.0+)
+
+## 🚀 Развертывание
+
+### Development
+- Используй `localhost:8000` для API
+- Используй `ws://localhost:8000/ws` для WebSocket
+- Включи все логи для отладки
+
+### Production
+- Замени URL на продакшен домены
+- Отключи debug логи
+- Настрой SSL сертификаты
+- Добавь crash reporting (Crashlytics)
+
+## 📋 Checklist для новых фич
+
+### Перед началом разработки
+- [ ] Создал модель данных
+- [ ] Создал сервис для API
+- [ ] Создал ViewModel
+- [ ] Создал View
+- [ ] Добавил обработку ошибок
+- [ ] Добавил локализацию
+- [ ] Добавил тесты
+- [ ] Добавил микро-анимации и haptic feedback
+- [ ] Проверил соответствие принципам "сочного минимализма"
+
+### Перед коммитом
+- [ ] Код проходит линтер
+- [ ] Все тесты проходят
+- [ ] Добавил документацию
+- [ ] Проверил на разных устройствах
+- [ ] Проверил accessibility
+- [ ] Проверил анимации на разных устройствах
+- [ ] Убедился в отсутствии синглтонов в новых классах
+
+## 🐛 Отладка
+
+### Логирование
+```swift
+// Используй os.Logger для логирования
+import os
+
+private let logger = Logger(subsystem: "com.memegame.app", category: "network")
+
+logger.debug("WebSocket connected")
+logger.error("Authentication failed: \(error.localizedDescription)")
+```
+
+### Debug режим
+- Показывай детальную информацию об ошибках
+- Логируй все сетевые запросы
+- Показывай состояние WebSocket соединения
+- Добавь возможность сброса данных
+
+## 📚 Документация
+
+### Комментарии
+- Документируй все публичные методы
+- Используй /// для документации
+- Добавляй примеры использования
+- Объясняй сложную логику
+
+### README
+- Описание проекта
+- Инструкции по установке
+- Архитектура приложения
+- API документация
+- Примеры использования
+
+## 🔒 Безопасность
+
+### Хранение данных
+- JWT токены только в Keychain
+- Не логируй чувствительные данные
+- Используй HTTPS в продакшене
+- Валидируй все входные данные
+
+### Game Center
+- Проверяй подпись Game Center
+- Валидируй player_id
+- Обрабатывай ошибки аутентификации
+
+## 📈 Производительность
+
+### Оптимизация
+- Используй lazy loading для изображений
+- Кэшируй данные карт
+- Оптимизируй WebSocket сообщения
+- Используй background fetch для обновлений
+
+### Мониторинг
+- Отслеживай время загрузки
+- Мониторь использование памяти
+- Логируй медленные запросы
+- Отслеживай crash rate
+
+---
+
+## 🎯 Приоритеты разработки
+
+1. **Аутентификация через Game Center** - критично
+2. **WebSocket игровой процесс** - критично
+3. **Базовый UI для комнат** - высокий
+4. **Коллекция карт** - средний
+5. **Профиль пользователя** - средний
+6. **Push уведомления** - низкий
+7. **Аналитика** - низкий
+
+## 📞 Поддержка
+
+- **API документация:** `http://localhost:8000/docs` (Swagger UI)
+- **OpenAPI Spec:** `http://localhost:8000/openapi.json`
+- **Статус сервиса:** `http://localhost:8000/health`
+- **Техническая поддержка:** [email]
+- **GitHub Issues:** Для багов и feature requests
+
+---
+
+*Последнее обновление: 1 января 2024*
+*Версия: 1.0.0* 

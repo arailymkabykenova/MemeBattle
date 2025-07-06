@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тестирование WebSocket и Игровых Эндпоинтов</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        .section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            border: 1px solid #e9ecef;
+        }
+
+        .section h2 {
+            color: #495057;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #4facfe;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffd43b 0%, #fcc419 100%);
+            color: #495057;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: 600;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .log {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .log-entry.sent {
+            background: #2a4365;
+            color: #90cdf4;
+        }
+
+        .log-entry.received {
+            background: #22543d;
+            color: #9ae6b4;
+        }
+
+        .log-entry.error {
+            background: #742a2a;
+            color: #feb2b2;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        .tab.active {
+            border-bottom-color: #4facfe;
+            color: #4facfe;
+        }
+
+        .tab:hover {
+            background: #f8f9fa;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+            
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 Тестирование WebSocket и Игровых Эндпоинтов</h1>
+            <p>Интерфейс для тестирования функциональности мем-карточной игры</p>
+        </div>
+
+        <div class="content">
+            <!-- WebSocket Тестирование -->
+            <div class="section">
+                <h2>🔌 WebSocket Тестирование</h2>
+                
+                <div class="form-group">
+                    <label for="wsToken">JWT Токен:</label>
+                    <input type="text" id="wsToken" placeholder="Введите JWT токен для аутентификации">
+                </div>
+
+                <div class="form-group">
+                    <label for="wsRoomId">ID Комнаты (опционально):</label>
+                    <input type="number" id="wsRoomId" placeholder="ID комнаты для автоматического присоединения">
+                </div>
+
+                <div class="status" id="wsStatus">
+                    <strong>Статус:</strong> Не подключен
+                </div>
+
+                <button class="btn" onclick="connectWebSocket()">🔗 Подключиться</button>
+                <button class="btn btn-danger" onclick="disconnectWebSocket()">❌ Отключиться</button>
+
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('room')">Комнаты</div>
+                    <div class="tab" onclick="switchTab('game')">Игра</div>
+                    <div class="tab" onclick="switchTab('actions')">Действия</div>
+                </div>
+
+                <!-- Комнаты -->
+                <div class="tab-content active" id="room-tab">
+                    <div class="grid-2">
+                        <div>
+                            <h3>Присоединение к комнате</h3>
+                            <div class="form-group">
+                                <label for="joinRoomId">ID Комнаты:</label>
+                                <input type="number" id="joinRoomId" placeholder="ID комнаты">
+                            </div>
+                            <button class="btn" onclick="joinRoom()">➕ Присоединиться по ID</button>
+                        </div>
+                        <div>
+                            <h3>Присоединение по коду</h3>
+                            <div class="form-group">
+                                <label for="joinRoomCode">Код комнаты:</label>
+                                <input type="text" id="joinRoomCode" placeholder="Код комнаты">
+                            </div>
+                            <button class="btn" onclick="joinRoomByCode()">🔑 Присоединиться по коду</button>
+                        </div>
+                    </div>
+                    <div class="full-width">
+                        <button class="btn btn-warning" onclick="leaveRoom()">🚪 Покинуть комнату</button>
+                        <button class="btn btn-success" onclick="startGame()">🎮 Начать игру</button>
+                    </div>
+                </div>
+
+                <!-- Игра -->
+                <div class="tab-content" id="game-tab">
+                    <div class="grid-2">
+                        <div>
+                            <h3>Раунды</h3>
+                            <div class="form-group">
+                                <label for="situationText">Текст ситуации:</label>
+                                <textarea id="situationText" rows="3" placeholder="Текст ситуационной карточки"></textarea>
+                            </div>
+                            <button class="btn" onclick="startRound()">🎯 Начать раунд</button>
+                        </div>
+                        <div>
+                            <h3>Состояние игры</h3>
+                            <div class="form-group">
+                                <label for="gameId">ID Игры:</label>
+                                <input type="number" id="gameId" placeholder="ID игры">
+                            </div>
+                            <button class="btn" onclick="getGameState()">📊 Получить состояние</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Действия -->
+                <div class="tab-content" id="actions-tab">
+                    <div class="grid-2">
+                        <div>
+                            <h3>Выбор карты</h3>
+                            <div class="form-group">
+                                <label for="roundId">ID Раунда:</label>
+                                <input type="number" id="roundId" placeholder="ID раунда">
+                            </div>
+                            <div class="form-group">
+                                <label for="cardType">Тип карты:</label>
+                                <select id="cardType">
+                                    <option value="starter">Starter</option>
+                                    <option value="standard">Standard</option>
+                                    <option value="unique">Unique</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="cardNumber">Номер карты:</label>
+                                <input type="number" id="cardNumber" placeholder="Номер карты">
+                            </div>
+                            <button class="btn" onclick="submitCardChoice()">🎴 Выбрать карту</button>
+                        </div>
+                        <div>
+                            <h3>Голосование</h3>
+                            <div class="form-group">
+                                <label for="voteRoundId">ID Раунда:</label>
+                                <input type="number" id="voteRoundId" placeholder="ID раунда">
+                            </div>
+                            <div class="form-group">
+                                <label for="voteCardId">ID Карты:</label>
+                                <input type="number" id="voteCardId" placeholder="ID карты для голосования">
+                            </div>
+                            <button class="btn" onclick="submitVote()">🗳️ Голосовать</button>
+                        </div>
+                    </div>
+                    <div class="full-width">
+                        <button class="btn" onclick="ping()">🏓 Ping</button>
+                        <button class="btn" onclick="getRoundCards()">📋 Получить карты раунда</button>
+                        <button class="btn" onclick="getChoicesForVoting()">👥 Получить выборы для голосования</button>
+                    </div>
+                </div>
+
+                <div class="log" id="wsLog">
+                    <div class="log-entry info">WebSocket лог готов к работе...</div>
+                </div>
+            </div>
+
+            <!-- HTTP API Тестирование -->
+            <div class="section">
+                <h2>🌐 HTTP API Тестирование</h2>
+                
+                <div class="form-group">
+                    <label for="httpToken">JWT Токен:</label>
+                    <input type="text" id="httpToken" placeholder="Введите JWT токен для HTTP запросов">
+                </div>
+
+                <div class="tabs">
+                    <div class="tab active" onclick="switchHttpTab('rooms')">Комнаты</div>
+                    <div class="tab" onclick="switchHttpTab('games')">Игры</div>
+                    <div class="tab" onclick="switchHttpTab('cards')">Карты</div>
+                </div>
+
+                <!-- Комнаты API -->
+                <div class="tab-content active" id="rooms-tab">
+                    <h3>Управление комнатами</h3>
+                    <div class="form-group">
+                        <label for="roomMaxPlayers">Максимум игроков:</label>
+                        <input type="number" id="roomMaxPlayers" value="4" min="2" max="8">
+                    </div>
+                    <div class="form-group">
+                        <label for="roomIsPublic">Публичная комната:</label>
+                        <select id="roomIsPublic">
+                            <option value="true">Да</option>
+                            <option value="false">Нет</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="roomAgeGroup">Возрастная группа:</label>
+                        <select id="roomAgeGroup">
+                            <option value="teen">Подростки (13-17)</option>
+                            <option value="adult">Взрослые (18+)</option>
+                        </select>
+                    </div>
+                    <button class="btn" onclick="createRoom()">🏠 Создать комнату</button>
+                    <button class="btn" onclick="getPublicRooms()">📋 Публичные комнаты</button>
+                    <button class="btn" onclick="getMyRooms()">👤 Мои комнаты</button>
+                </div>
+
+                <!-- Игры API -->
+                <div class="tab-content" id="games-tab">
+                    <h3>Управление играми</h3>
+                    <div class="form-group">
+                        <label for="httpGameId">ID Игры:</label>
+                        <input type="number" id="httpGameId" placeholder="ID игры">
+                    </div>
+                    <div class="form-group">
+                        <label for="httpRoomId">ID Комнаты:</label>
+                        <input type="number" id="httpRoomId" placeholder="ID комнаты">
+                    </div>
+                    <button class="btn" onclick="getGame()">📊 Получить игру</button>
+                    <button class="btn" onclick="getCurrentGame()">🎮 Текущая игра в комнате</button>
+                    <button class="btn" onclick="getMyCards()">🎴 Мои карты для игры</button>
+                    <button class="btn" onclick="generateSituation()">🎭 Генерировать ситуацию</button>
+                </div>
+
+                <!-- Карты API -->
+                <div class="tab-content" id="cards-tab">
+                    <h3>Управление картами</h3>
+                    <div class="form-group">
+                        <label for="cardsCount">Количество карт:</label>
+                        <input type="number" id="cardsCount" value="3" min="1" max="10">
+                    </div>
+                    <button class="btn" onclick="getUserCards()">📚 Получить карты пользователя</button>
+                    <button class="btn" onclick="getStarterCards()">🌟 Стартовые карты</button>
+                    <button class="btn" onclick="getUniqueCards()">💎 Уникальные карты</button>
+                </div>
+
+                <div class="log" id="httpLog">
+                    <div class="log-entry info">HTTP API лог готов к работе...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let isConnected = false;
+        const API_BASE = 'http://localhost:8000';
+
+        // WebSocket функции
+        function connectWebSocket() {
+            const token = document.getElementById('wsToken').value;
+            const roomId = document.getElementById('wsRoomId').value;
+            
+            if (!token) {
+                log('error', 'Введите JWT токен для подключения');
+                return;
+            }
+
+            const url = `${API_BASE.replace('http', 'ws')}/ws?token=${token}${roomId ? `&room_id=${roomId}` : ''}`;
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = function() {
+                    isConnected = true;
+                    updateWebSocketStatus('Подключен', 'connected');
+                    log('info', 'WebSocket подключен');
+                };
+                
+                ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    log('received', `Получено: ${JSON.stringify(data, null, 2)}`);
+                };
+                
+                ws.onclose = function() {
+                    isConnected = false;
+                    updateWebSocketStatus('Отключен', 'disconnected');
+                    log('info', 'WebSocket отключен');
+                };
+                
+                ws.onerror = function(error) {
+                    log('error', `WebSocket ошибка: ${error}`);
+                };
+                
+            } catch (error) {
+                log('error', `Ошибка подключения: ${error.message}`);
+            }
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function sendWebSocketMessage(action, data = {}) {
+            if (!isConnected || !ws) {
+                log('error', 'WebSocket не подключен');
+                return;
+            }
+            
+            const message = { action, data };
+            ws.send(JSON.stringify(message));
+            log('sent', `Отправлено: ${JSON.stringify(message, null, 2)}`);
+        }
+
+        // WebSocket действия
+        function joinRoom() {
+            const roomId = document.getElementById('joinRoomId').value;
+            if (!roomId) {
+                log('error', 'Введите ID комнаты');
+                return;
+            }
+            sendWebSocketMessage('join_room', { room_id: parseInt(roomId) });
+        }
+
+        function joinRoomByCode() {
+            const roomCode = document.getElementById('joinRoomCode').value;
+            if (!roomCode) {
+                log('error', 'Введите код комнаты');
+                return;
+            }
+            sendWebSocketMessage('join_room', { room_code: roomCode });
+        }
+
+        function leaveRoom() {
+            sendWebSocketMessage('leave_room', {});
+        }
+
+        function startGame() {
+            sendWebSocketMessage('start_game', {});
+        }
+
+        function startRound() {
+            const situationText = document.getElementById('situationText').value;
+            sendWebSocketMessage('start_round', { situation_text: situationText });
+        }
+
+        function getGameState() {
+            const gameId = document.getElementById('gameId').value;
+            if (!gameId) {
+                log('error', 'Введите ID игры');
+                return;
+            }
+            sendWebSocketMessage('get_game_state', { game_id: parseInt(gameId) });
+        }
+
+        function submitCardChoice() {
+            const roundId = document.getElementById('roundId').value;
+            const cardType = document.getElementById('cardType').value;
+            const cardNumber = document.getElementById('cardNumber').value;
+            
+            if (!roundId || !cardType || !cardNumber) {
+                log('error', 'Заполните все поля для выбора карты');
+                return;
+            }
+            
+            sendWebSocketMessage('submit_card_choice', {
+                round_id: parseInt(roundId),
+                card_type: cardType,
+                card_number: parseInt(cardNumber)
+            });
+        }
+
+        function submitVote() {
+            const roundId = document.getElementById('voteRoundId').value;
+            const cardId = document.getElementById('voteCardId').value;
+            
+            if (!roundId || !cardId) {
+                log('error', 'Заполните все поля для голосования');
+                return;
+            }
+            
+            sendWebSocketMessage('submit_vote', {
+                round_id: parseInt(roundId),
+                card_id: parseInt(cardId)
+            });
+        }
+
+        function ping() {
+            sendWebSocketMessage('ping', {});
+        }
+
+        function getRoundCards() {
+            const roundId = document.getElementById('roundId').value;
+            if (!roundId) {
+                log('error', 'Введите ID раунда');
+                return;
+            }
+            sendWebSocketMessage('get_round_cards', { round_id: parseInt(roundId) });
+        }
+
+        function getChoicesForVoting() {
+            const roundId = document.getElementById('voteRoundId').value;
+            if (!roundId) {
+                log('error', 'Введите ID раунда');
+                return;
+            }
+            sendWebSocketMessage('get_choices_for_voting', { round_id: parseInt(roundId) });
+        }
+
+        // HTTP API функции
+        async function makeHttpRequest(method, endpoint, data = null) {
+            const token = document.getElementById('httpToken').value;
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const options = {
+                method,
+                headers,
+                body: data ? JSON.stringify(data) : null
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                const result = await response.json();
+                
+                if (response.ok) {
+                    logHttp('success', `${method} ${endpoint}: ${JSON.stringify(result, null, 2)}`);
+                } else {
+                    logHttp('error', `${method} ${endpoint}: ${JSON.stringify(result, null, 2)}`);
+                }
+                
+                return result;
+            } catch (error) {
+                logHttp('error', `Ошибка запроса ${method} ${endpoint}: ${error.message}`);
+            }
+        }
+
+        // Комнаты API
+        function createRoom() {
+            const data = {
+                max_players: parseInt(document.getElementById('roomMaxPlayers').value),
+                is_public: document.getElementById('roomIsPublic').value === 'true',
+                age_group: document.getElementById('roomAgeGroup').value
+            };
+            makeHttpRequest('POST', '/rooms/', data);
+        }
+
+        function getPublicRooms() {
+            makeHttpRequest('GET', '/rooms/public');
+        }
+
+        function getMyRooms() {
+            makeHttpRequest('GET', '/rooms/my');
+        }
+
+        // Игры API
+        function getGame() {
+            const gameId = document.getElementById('httpGameId').value;
+            if (!gameId) {
+                logHttp('error', 'Введите ID игры');
+                return;
+            }
+            makeHttpRequest('GET', `/games/${gameId}`);
+        }
+
+        function getCurrentGame() {
+            const roomId = document.getElementById('httpRoomId').value;
+            if (!roomId) {
+                logHttp('error', 'Введите ID комнаты');
+                return;
+            }
+            makeHttpRequest('GET', `/games/rooms/${roomId}/current-game`);
+        }
+
+        function getMyCards() {
+            const count = document.getElementById('cardsCount').value;
+            makeHttpRequest('GET', `/games/my-cards-for-game?count=${count}`);
+        }
+
+        function generateSituation() {
+            const data = {
+                topic: "работа",
+                difficulty: "medium",
+                age_group: "adult"
+            };
+            makeHttpRequest('POST', '/games/situations/generate', data);
+        }
+
+        // Карты API
+        function getUserCards() {
+            makeHttpRequest('GET', '/cards/my');
+        }
+
+        function getStarterCards() {
+            makeHttpRequest('GET', '/cards/starter');
+        }
+
+        function getUniqueCards() {
+            makeHttpRequest('GET', '/cards/unique');
+        }
+
+        // Вспомогательные функции
+        function updateWebSocketStatus(message, className) {
+            const status = document.getElementById('wsStatus');
+            status.innerHTML = `<strong>Статус:</strong> ${message}`;
+            status.className = `status ${className}`;
+        }
+
+        function log(type, message) {
+            const log = document.getElementById('wsLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function logHttp(type, message) {
+            const log = document.getElementById('httpLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function switchTab(tabName) {
+            // Скрываем все табы
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Показываем нужный таб
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function switchHttpTab(tabName) {
+            // Скрываем все табы
+            document.querySelectorAll('#rooms-tab, #games-tab, #cards-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.section:last-child .tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Показываем нужный таб
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Очистка логов
+        function clearLogs() {
+            document.getElementById('wsLog').innerHTML = '<div class="log-entry info">WebSocket лог очищен...</div>';
+            document.getElementById('httpLog').innerHTML = '<div class="log-entry info">HTTP API лог очищен...</div>';
+        }
+
+        // Добавляем кнопки очистки логов
+        document.addEventListener('DOMContentLoaded', function() {
+            const wsSection = document.querySelector('.section:first-child');
+            const httpSection = document.querySelector('.section:last-child');
+            
+            const clearWsBtn = document.createElement('button');
+            clearWsBtn.className = 'btn btn-warning';
+            clearWsBtn.textContent = '🧹 Очистить лог';
+            clearWsBtn.onclick = () => document.getElementById('wsLog').innerHTML = '<div class="log-entry info">WebSocket лог очищен...</div>';
+            
+            const clearHttpBtn = document.createElement('button');
+            clearHttpBtn.className = 'btn btn-warning';
+            clearHttpBtn.textContent = '🧹 Очистить лог';
+            clearHttpBtn.onclick = () => document.getElementById('httpLog').innerHTML = '<div class="log-entry info">HTTP API лог очищен...</div>';
+            
+            wsSection.appendChild(clearWsBtn);
+            httpSection.appendChild(clearHttpBtn);
+        });
+    </script>
+</body>
+</html> 

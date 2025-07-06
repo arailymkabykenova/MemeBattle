@@ -1,0 +1,56 @@
+# FastAPI и основные компоненты
+fastapi==0.115.14
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# База данных - начнем с базовых
+sqlalchemy==2.0.36
+alembic==1.16.2
+
+# Утилиты
+python-dotenv==1.0.1
+
+# Валидация
+pydantic==2.10.4
+pydantic-settings==2.8.0
+
+# WebSocket
+websockets==10.4
+
+# HTTP клиент
+httpx==0.28.1
+psycopg2-binary
+# Game Center аутентификация (используем cryptography для верификации подписей)
+# cryptography уже включена в другие зависимости
+
+# JWT токены
+python-jose[cryptography]==3.3.0
+PyJWT
+cryptography
+
+# Тестирование
+pytest==8.3.4
+pytest-asyncio==0.24.0
+
+# Azure Services
+azure-storage-blob==12.25.1
+openai==1.93.0  # Для Azure OpenAI тоже используется библиотека openai
+
+# Дополнительная совместимость
+asyncpg==0.30.0
+psycopg2-binary
+
+# Логирование и мониторинг
+structlog
+
+# Redis для кэширования и Celery
+redis==5.2.1
+
+# Celery для фоновых задач
+celery==5.5.3
+
+# Docker и deployment
+gunicorn==23.0.0
+
+# Дополнительные зависимости
+aiohttp==3.12.13 

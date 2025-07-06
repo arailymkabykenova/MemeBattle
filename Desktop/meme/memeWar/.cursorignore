@@ -1,0 +1,150 @@
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xcscheme
+*.xcuserdatad/
+
+# Build
+build/
+DerivedData/
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+Packages/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+Podfile.lock
+
+# Carthage
+Carthage/Build/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code coverage
+*.coverage.txt
+*.gcda
+*.gcno
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test artifacts
+*.testresult
+TestResults/
+
+# Documentation
+docs/_build/
+
+# Backup files
+*.bak
+*.backup
+
+# Local configuration
+.env
+.env.local
+*.plist.local
+
+# Generated files
+Generated/
+CodeGenerated/
+
+# Archive
+*.xcarchive
+
+# Playgrounds
+*.playground/
+
+# App Store Connect
+*.itmsp
+
+# Crash logs
+*.crash
+
+# Instruments
+*.trace
+
+# Simulator
+*.simulator/
+
+# Keychain
+*.keychain
+
+# Certificates
+*.p12
+*.pem
+*.cer
+*.crt
+*.key
+
+# Provisioning profiles
+*.mobileprovision
+*.provisionprofile
+
+# App signing
+*.ipa
+*.app
+
+# TestFlight
+*.ipa
+
+# Analytics
+Analytics/
+*.analytics
+
+# Localization
+*.lproj/Base.lproj/
+*.lproj/en.lproj/
+
+# Assets (keep only source)
+*.xcassets/*.imageset/Contents.json
+*.xcassets/*.appiconset/Contents.json
+*.xcassets/*.colorset/Contents.json
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+CHANGELOG.md
+LICENSE
+*.md
+
+# Project specific
+.cursorrules
+.cursorignore 
