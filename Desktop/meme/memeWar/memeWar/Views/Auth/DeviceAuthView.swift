@@ -9,65 +9,56 @@ import SwiftUI
 
 struct DeviceAuthView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @State private var deviceId = ""
     
     var body: some View {
-        VStack(spacing: AppConstants.largePadding) {
+        VStack(spacing: 30) {
             Spacer()
             
-            // App Logo/Title
-            VStack(spacing: AppConstants.padding) {
+            VStack(spacing: 20) {
                 Image(systemName: "gamecontroller.fill")
                     .font(.system(size: 80))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(.blue)
                 
                 Text("Meme War")
                     .font(.largeTitle)
                     .fontWeight(.bold)
                 
                 Text("Карточная игра с мемами")
-                    .font(.title3)
+                    .font(.title2)
                     .foregroundColor(.secondary)
             }
             
             Spacer()
             
-            // Auth Button
-            Button(action: {
-                Task {
-                    await authViewModel.authenticateWithDevice()
-                }
-            }) {
-                HStack {
-                    if authViewModel.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "iphone")
+            VStack(spacing: 20) {
+                Button(action: {
+                    Task {
+                        let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+                        await authViewModel.deviceAuth(deviceId: deviceId)
                     }
-                    
-                    Text(authViewModel.isLoading ? "Подключение..." : "Войти в игру")
-                        .fontWeight(.medium)
+                }) {
+                    HStack {
+                        if authViewModel.isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "play.fill")
+                        }
+                        Text("Начать игру")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
-                .font(.body)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, AppConstants.padding)
-                .background(
-                    RoundedRectangle(cornerRadius: AppConstants.cornerRadius)
-                        .fill(Color.accentColor)
-                )
-            }
-            .disabled(authViewModel.isLoading)
-            .padding(.horizontal, AppConstants.largePadding)
-            
-            // Error Message
-            if authViewModel.showError {
-                Text(authViewModel.errorMessage ?? "Произошла ошибка")
+                .disabled(authViewModel.isLoading)
+                
+                Text("Автоматическая авторизация по устройству")
                     .font(.caption)
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, AppConstants.largePadding)
+                    .foregroundColor(.secondary)
             }
             
             Spacer()

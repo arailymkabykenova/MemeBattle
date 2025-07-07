@@ -53,13 +53,10 @@ enum WebSocketAction: String, CaseIterable {
     case joinRoom = "join_room"
     case leaveRoom = "leave_room"
     case startGame = "start_game"
-    case startRound = "start_round"
     case submitCardChoice = "submit_card_choice"
     case submitVote = "submit_vote"
     case startVoting = "start_voting"
     case getGameState = "get_game_state"
-    case getRoundCards = "get_round_cards"
-    case getChoicesForVoting = "get_choices_for_voting"
 }
 
 // MARK: - WebSocket Event Types
@@ -152,13 +149,6 @@ extension WebSocketMessage {
         )
     }
     
-    static func roundStarted(roundId: Int) -> WebSocketMessage {
-        return WebSocketMessage(
-            action: WebSocketAction.startRound.rawValue,
-            data: ["round_id": roundId]
-        )
-    }
-    
     static func submitCardChoice(roundId: Int, cardId: String, isAnonymous: Bool) -> WebSocketMessage {
         return WebSocketMessage(
             action: WebSocketAction.submitCardChoice.rawValue,
@@ -193,127 +183,4 @@ extension WebSocketMessage {
             data: ["room_id": roomId]
         )
     }
-    
-    static func getRoundCards(roundId: Int) -> WebSocketMessage {
-        return WebSocketMessage(
-            action: WebSocketAction.getRoundCards.rawValue,
-            data: ["round_id": roundId]
-        )
-    }
-    
-    static func getChoicesForVoting(roundId: Int) -> WebSocketMessage {
-        return WebSocketMessage(
-            action: WebSocketAction.getChoicesForVoting.rawValue,
-            data: ["round_id": roundId]
-        )
-    }
-}
-
-// MARK: - WebSocket Event Data Models
-
-struct RoomStateChangedData: Codable {
-    let room: RoomResponse
-    let participants: [RoomParticipantResponse]
-    let creator_nickname: String
-    let can_start_game: Bool
-}
-
-struct GameStartedData: Codable {
-    let game: GameResponse
-    let players: [GamePlayerResponse]
-    let first_round: RoundResponse?
-}
-
-struct RoundStartedData: Codable {
-    let round: RoundResponse
-    let situation: String
-    let time_limit: TimeInterval
-    let available_cards: [CardResponse]
-}
-
-struct VotingStartedData: Codable {
-    let round: RoundResponse
-    let choices: [CardChoiceResponse]
-    let time_limit: TimeInterval
-}
-
-struct RoundEndedData: Codable {
-    let round: RoundResponse
-    let results: RoundResultResponse
-    let next_round: RoundResponse?
-}
-
-struct GameEndedData: Codable {
-    let game: GameResponse
-    let winner: GamePlayerResponse?
-    let final_scores: [PlayerScore]
-    let total_rounds: Int
-}
-
-struct PlayerJoinedData: Codable {
-    let participant: RoomParticipantResponse
-    let room: RoomResponse
-    let total_players: Int
-}
-
-struct PlayerLeftData: Codable {
-    let user_id: Int
-    let user_nickname: String
-    let room: RoomResponse
-    let total_players: Int
-}
-
-struct TimeoutWarningData: Codable {
-    let round_id: Int
-    let time_remaining: TimeInterval
-    let warning_type: String // "choice" or "vote"
-}
-
-struct PlayerTimeoutData: Codable {
-    let user_id: Int
-    let user_nickname: String
-    let round_id: Int
-    let timeout_type: String // "choice" or "vote"
-}
-
-struct CardChoiceSubmittedData: Codable {
-    let choice: CardChoiceResponse
-    let total_choices: Int
-    let expected_choices: Int
-}
-
-struct VoteSubmittedData: Codable {
-    let vote: VoteResponse
-    let total_votes: Int
-    let expected_votes: Int
-}
-
-struct GameStateUpdateData: Codable {
-    let game_state: GameState
-    let time_remaining: TimeInterval?
-}
-
-struct WebSocketErrorData: Codable {
-    let error_code: String
-    let message: String
-    let details: String?
-}
-
-// MARK: - WebSocket Connection Models
-
-struct WebSocketConnectionInfo: Codable {
-    let room_id: Int?
-    let user_id: Int
-    let token: String
-    let connection_id: String
-}
-
-struct WebSocketStats: Codable {
-    let total_connections: Int
-    let active_rooms: Int
-    let total_messages_sent: Int
-    let total_messages_received: Int
-    let average_latency: TimeInterval
-}
-
- 
+} 

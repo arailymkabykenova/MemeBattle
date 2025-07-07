@@ -8,31 +8,30 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @EnvironmentObject var profileViewModel: ProfileViewModel
-    @EnvironmentObject var cardsViewModel: CardsViewModel
+    @StateObject private var authViewModel = AuthViewModel()
     
     var body: some View {
         Group {
             if authViewModel.isLoading {
                 LoadingView()
             } else if !authViewModel.isAuthenticated {
-                // Step 1: Device Authentication
                 DeviceAuthView()
-            } else if !profileViewModel.isProfileComplete {
-                // Step 2: Profile Completion
+                    .environmentObject(authViewModel)
+            } else if !authViewModel.isProfileComplete {
                 ProfileSetupView()
-            } else if !cardsViewModel.hasStarterCards {
-                // Step 3: Get Starter Cards
-                StarterCardsView()
+                    .environmentObject(authViewModel)
             } else {
-                // Step 4: Main App with Tab Bar
                 MainTabView()
+                    .environmentObject(authViewModel)
             }
         }
-        .onAppear {
-            Task {
-                await authViewModel.checkAuthStatus()
+        .alert("Ошибка", isPresented: .constant(authViewModel.errorMessage != nil)) {
+            Button("OK") {
+                authViewModel.errorMessage = nil
+            }
+        } message: {
+            if let errorMessage = authViewModel.errorMessage {
+                Text(errorMessage)
             }
         }
     }
@@ -40,7 +39,4 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .environmentObject(AuthViewModel())
-        .environmentObject(ProfileViewModel())
-        .environmentObject(CardsViewModel())
 } 

@@ -8,13 +8,13 @@
 import Foundation
 
 protocol RoomRepositoryProtocol {
-    func createRoom(request: CreateRoomRequest) async throws -> RoomResponse
+    func createRoom(request: CreateRoomRequest) async throws -> RoomDetailResponse
     func getAvailableRooms() async throws -> [RoomResponse]
-    func getMyRoom() async throws -> RoomResponse?
+    func getMyRoom() async throws -> RoomDetailResponse?
     func getRoomDetails(roomId: Int) async throws -> RoomDetailResponse
-    func joinRoom(roomId: Int) async throws -> RoomResponse
-    func joinByCode(code: String) async throws -> RoomResponse
-    func quickMatch() async throws -> RoomResponse
+    func joinRoom(roomId: Int) async throws -> RoomDetailResponse
+    func joinByCode(code: String) async throws -> RoomDetailResponse
+    func quickMatch() async throws -> RoomDetailResponse
     func leaveRoom(roomId: Int) async throws
     func startGame(roomId: Int) async throws -> GameResponse
     func getRoomStats() async throws -> RoomStatsResponse
@@ -30,8 +30,8 @@ class RoomRepository: RoomRepositoryProtocol {
         self.tokenManager = tokenManager
     }
     
-    func createRoom(request: CreateRoomRequest) async throws -> RoomResponse {
-        let response: RoomResponse = try await networkManager.post(
+    func createRoom(request: CreateRoomRequest) async throws -> RoomDetailResponse {
+        let response: RoomDetailResponse = try await networkManager.post(
             endpoint: APIConstants.Endpoints.createRoom,
             body: request
         )
@@ -47,8 +47,8 @@ class RoomRepository: RoomRepositoryProtocol {
         return response
     }
     
-    func getMyRoom() async throws -> RoomResponse? {
-        let response: RoomResponse? = try await networkManager.get(
+    func getMyRoom() async throws -> RoomDetailResponse? {
+        let response: RoomDetailResponse? = try await networkManager.get(
             endpoint: APIConstants.Endpoints.myRoom
         )
         
@@ -62,9 +62,9 @@ class RoomRepository: RoomRepositoryProtocol {
         return response
     }
     
-    func joinRoom(roomId: Int) async throws -> RoomResponse {
+    func joinRoom(roomId: Int) async throws -> RoomDetailResponse {
         let endpoint = APIConstants.Endpoints.joinRoom.replacingOccurrences(of: "{room_id}", with: "\(roomId)")
-        let response: RoomResponse = try await networkManager.post(
+        let response: RoomDetailResponse = try await networkManager.post(
             endpoint: endpoint,
             body: EmptyRequest()
         )
@@ -72,9 +72,9 @@ class RoomRepository: RoomRepositoryProtocol {
         return response
     }
     
-    func joinByCode(code: String) async throws -> RoomResponse {
+    func joinByCode(code: String) async throws -> RoomDetailResponse {
         let request = JoinByCodeRequest(room_code: code)
-        let response: RoomResponse = try await networkManager.post(
+        let response: RoomDetailResponse = try await networkManager.post(
             endpoint: APIConstants.Endpoints.joinByCode,
             body: request
         )
@@ -82,8 +82,8 @@ class RoomRepository: RoomRepositoryProtocol {
         return response
     }
     
-    func quickMatch() async throws -> RoomResponse {
-        let response: RoomResponse = try await networkManager.post(
+    func quickMatch() async throws -> RoomDetailResponse {
+        let response: RoomDetailResponse = try await networkManager.post(
             endpoint: APIConstants.Endpoints.quickMatch,
             body: EmptyRequest()
         )
@@ -122,4 +122,6 @@ class RoomRepository: RoomRepositoryProtocol {
 
 struct JoinByCodeRequest: Codable {
     let room_code: String
-} 
+}
+
+private struct EmptyRequest: Codable {} 

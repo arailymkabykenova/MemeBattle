@@ -455,7 +455,7 @@
                 return;
             }
 
-            const url = `${API_BASE.replace('http', 'ws')}/ws?token=${token}${roomId ? `&room_id=${roomId}` : ''}`;
+            const url = `${API_BASE.replace('http', 'ws')}/websocket/ws?token=${token}${roomId ? `&room_id=${roomId}` : ''}`;
             
             try {
                 ws = new WebSocket(url);

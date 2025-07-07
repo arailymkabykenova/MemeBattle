@@ -125,9 +125,18 @@ async def get_user_from_token(token: str, db: AsyncSession) -> Optional[UserResp
         AuthenticationError: Если токен невалиден
         UserNotFoundError: Если пользователь не найден
     """
-    auth_service = AuthService(db)
-    user = await auth_service.get_current_user(token)
-    return user
+    try:
+        auth_service = AuthService(db)
+        user = await auth_service.get_current_user(token)
+        return user
+    except (AuthenticationError, UserNotFoundError) as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Authentication failed for WebSocket: {e}")
+        return None
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Unexpected error during WebSocket authentication: {e}")
+        return None
 
 
 async def get_game_service(

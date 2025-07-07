@@ -7,7 +7,6 @@
 
 import Foundation
 import Combine
-import UIKit
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -15,39 +14,69 @@ class AuthViewModel: ObservableObject {
     private let tokenManager: TokenManagerProtocol
     
     @Published var isAuthenticated = false
-    @Published var isLoading = false
-    @Published var showError = false
-    @Published var errorMessage: String?
+    @Published var isProfileComplete = false
     @Published var currentUser: UserResponse?
-    @Published var isNewUser = false
-    
-    private var cancellables = Set<AnyCancellable>()
+    @Published var isLoading = false
+    @Published var errorMessage: String?
     
     init(authRepository: AuthRepositoryProtocol = AuthRepository(),
          tokenManager: TokenManagerProtocol = TokenManager.shared) {
         self.authRepository = authRepository
         self.tokenManager = tokenManager
-        
-        // Check authentication status on init
-        checkAuthenticationStatus()
+        checkAuthStatus()
     }
     
     // MARK: - Authentication
     
-    func authenticate() async {
+    func checkAuthStatus() {
+        guard let token = tokenManager.getToken() else {
+            isAuthenticated = false
+            isProfileComplete = false
+            return
+        }
+        
+        isAuthenticated = true
+        loadCurrentUser()
+    }
+    
+    func deviceAuth(deviceId: String) async {
         isLoading = true
-        showError = false
+        errorMessage = nil
         
         do {
-            let deviceId = getDeviceId()
-            let authResponse = try await authRepository.deviceAuth(deviceId: deviceId)
-            
-            currentUser = authResponse.user
-            isNewUser = authResponse.is_new_user
+            let response = try await authRepository.deviceAuth(deviceId: deviceId)
+            currentUser = response.user
             isAuthenticated = true
+            isProfileComplete = response.user.is_profile_complete
             
+            if response.is_new_user {
+                // New user needs to complete profile
+                isProfileComplete = false
+            }
         } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
+            isAuthenticated = false
+        }
+        
+        isLoading = false
+    }
+    
+    func completeProfile(nickname: String, birthDate: Date, gender: Gender) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let request = UserProfileCreate(
+                nickname: nickname,
+                birth_date: birthDate,
+                gender: gender
+            )
+            
+            let user = try await authRepository.completeProfile(request: request)
+            currentUser = user
+            isProfileComplete = true
+        } catch {
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
@@ -59,53 +88,29 @@ class AuthViewModel: ObservableObject {
         do {
             try await authRepository.logout()
             isAuthenticated = false
+            isProfileComplete = false
             currentUser = nil
-            isNewUser = false
         } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
     }
     
-    func getCurrentUser() async {
-        do {
-            currentUser = try await authRepository.getCurrentUser()
-        } catch {
-            handleError(error)
-        }
-    }
-    
     // MARK: - Private Methods
     
-    private func checkAuthenticationStatus() {
-        if let token = tokenManager.getToken(), !token.isEmpty {
-            isAuthenticated = true
-            Task {
-                await getCurrentUser()
+    private func loadCurrentUser() {
+        Task {
+            do {
+                let user = try await authRepository.getCurrentUser()
+                currentUser = user
+                isProfileComplete = user.is_profile_complete
+            } catch {
+                // If we can't load user, clear auth state
+                isAuthenticated = false
+                isProfileComplete = false
+                currentUser = nil
             }
-        } else {
-            isAuthenticated = false
         }
-    }
-    
-    private func getDeviceId() -> String {
-        if let deviceId = UIDevice.current.identifierForVendor?.uuidString {
-            return deviceId
-        }
-        
-        // Fallback to UserDefaults if device ID is not available
-        if let savedDeviceId = UserDefaults.standard.string(forKey: "device_id") {
-            return savedDeviceId
-        }
-        
-        let newDeviceId = UUID().uuidString
-        UserDefaults.standard.set(newDeviceId, forKey: "device_id")
-        return newDeviceId
-    }
-    
-    private func handleError(_ error: Error) {
-        showError = true
-        errorMessage = error.localizedDescription
     }
 } 

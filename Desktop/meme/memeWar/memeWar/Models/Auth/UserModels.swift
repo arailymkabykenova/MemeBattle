@@ -7,7 +7,7 @@
 
 import Foundation
 
-// MARK: - Gender Enum
+// MARK: - User Models
 
 enum Gender: String, Codable, CaseIterable {
     case male = "male"
@@ -34,16 +34,13 @@ struct UserResponse: Codable {
     let nickname: String?
     let birth_date: Date?
     let gender: Gender?
+    let rating: Double
     let created_at: Date
     let age: Int?
     let is_profile_complete: Bool
 }
 
-struct UserProfileCreate: Codable {
-    let nickname: String
-    let birth_date: Date
-    let gender: Gender
-}
+
 
 struct UserProfileUpdate: Codable {
     let nickname: String?

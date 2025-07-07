@@ -45,14 +45,18 @@ async def websocket_endpoint(
     """
     # Аутентификация пользователя
     try:
+        logger.info(f"WebSocket connection attempt with token: {token[:20]}...")
+        
         # Получаем сессию БД напрямую
         from ..core.database import async_session_maker
         async with async_session_maker() as db:
             user = await get_user_from_token(token, db)
             if not user:
-                logger.error(f"Invalid token for WebSocket connection")
+                logger.error(f"Invalid token for WebSocket connection: {token[:20]}...")
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
                 return
+            
+            logger.info(f"User authenticated successfully: {user.id} ({user.nickname})")
             
             # Получаем ConnectionManager
             connection_manager = get_connection_manager()

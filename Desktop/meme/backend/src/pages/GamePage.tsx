@@ -60,7 +60,7 @@ export default function GamePage({ token, roundId, userId, onGameEnd }: GamePage
   }, []);
 
   useWebSocket(
-    `${API_URL.replace('http', 'ws')}/ws/rooms/${roundId}?token=${token}`,
+    `${API_URL.replace('http', 'ws')}/websocket/ws?token=${token}`,
     handleWsMessage
   );
 

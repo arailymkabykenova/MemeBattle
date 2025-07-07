@@ -62,7 +62,8 @@ class AuthRepository: AuthRepositoryProtocol {
     
     func completeProfileRaw<T: Codable>(profile: T) async throws -> UserResponse {
         // Convert the generic Codable type to Data first, then post
-        let data = try JSONEncoder().encode(profile)
+        let encoder = JSONEncoder()
+        let data: Data = try encoder.encode(profile)
         let response: UserResponse = try await networkManager.post(
             endpoint: APIConstants.Endpoints.completeProfile,
             body: data

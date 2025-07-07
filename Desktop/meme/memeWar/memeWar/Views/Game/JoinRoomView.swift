@@ -12,52 +12,42 @@ struct JoinRoomView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var roomCode = ""
-    @State private var showingError = false
-    @State private var errorMessage = ""
     
     var body: some View {
         NavigationView {
-            VStack(spacing: AppConstants.largePadding) {
-                // Header
-                VStack(spacing: AppConstants.padding) {
-                    Image(systemName: "key.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.accentColor)
+            VStack(spacing: 30) {
+                VStack(spacing: 20) {
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(.orange)
                     
                     Text("Присоединиться к комнате")
-                        .font(.title2)
+                        .font(.title)
                         .fontWeight(.bold)
-                        .multilineTextAlignment(.center)
                     
-                    Text("Введите код приглашения от друга")
+                    Text("Введите код комнаты")
                         .font(.body)
                         .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
                 }
                 
-                // Code Input
-                VStack(spacing: AppConstants.padding) {
-                    TextField("Код комнаты", text: $roomCode)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .font(.title2)
-                        .multilineTextAlignment(.center)
-                        .textInputAutocapitalization(.characters)
-                        .onChange(of: roomCode) { newValue in
-                            roomCode = newValue.uppercased()
-                        }
-                    
-                    Text("Пример: ABC123")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Код комнаты")
+                            .font(.headline)
+                        
+                        TextField("Введите код", text: $roomCode)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
                 }
-                .padding(.horizontal, AppConstants.largePadding)
                 
                 Spacer()
                 
-                // Join Button
                 Button(action: {
                     Task {
-                        await joinRoom()
+                        await roomViewModel.joinRoomByCode(code: roomCode)
+                        dismiss()
                     }
                 }) {
                     HStack {
@@ -66,25 +56,17 @@ struct JoinRoomView: View {
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 .scaleEffect(0.8)
                         } else {
-                            Image(systemName: "person.2.fill")
+                            Image(systemName: "arrow.right")
                         }
-                        
-                        Text(roomViewModel.isLoading ? "Присоединение..." : "Присоединиться")
-                            .fontWeight(.medium)
+                        Text("Присоединиться")
                     }
-                    .font(.body)
-                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, AppConstants.padding)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppConstants.cornerRadius)
-                            .fill(isFormValid ? Color.accentColor : Color.gray)
-                    )
+                    .padding()
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
-                .disabled(!isFormValid || roomViewModel.isLoading)
-                .padding(.horizontal, AppConstants.largePadding)
-                
-                Spacer()
+                .disabled(roomCode.isEmpty || roomViewModel.isLoading)
             }
             .padding()
             .navigationTitle("Присоединиться")
@@ -96,26 +78,6 @@ struct JoinRoomView: View {
                     }
                 }
             }
-            .alert("Ошибка", isPresented: $showingError) {
-                Button("OK") { }
-            } message: {
-                Text(errorMessage)
-            }
-        }
-    }
-    
-    private var isFormValid: Bool {
-        roomCode.count >= 3 && roomCode.count <= 10
-    }
-    
-    private func joinRoom() async {
-        await roomViewModel.joinRoomByCode(code: roomCode)
-        
-        if roomViewModel.showError {
-            errorMessage = roomViewModel.errorMessage ?? "Не удалось присоединиться к комнате"
-            showingError = true
-        } else {
-            dismiss()
         }
     }
 }

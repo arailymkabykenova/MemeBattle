@@ -73,4 +73,8 @@ class CardsRepository: CardsRepositoryProtocol {
         
         return response
     }
-} 
+}
+
+// MARK: - Helper Models
+
+private struct EmptyRequest: Codable {} 

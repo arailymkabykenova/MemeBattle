@@ -7,7 +7,6 @@
 
 import Foundation
 import Combine
-import UIKit
 
 @MainActor
 class RoomViewModel: ObservableObject {
@@ -15,87 +14,49 @@ class RoomViewModel: ObservableObject {
     private let webSocketManager: WebSocketManager
     
     @Published var availableRooms: [RoomResponse] = []
-    @Published var myRoom: RoomResponse?
-    @Published var roomDetails: RoomDetailResponse?
+    @Published var currentRoom: RoomDetailResponse?
     @Published var isLoading = false
-    @Published var showError = false
     @Published var errorMessage: String?
-    @Published var isInRoom = false
-    @Published var currentGame: GameResponse?
-    
-    // Room creation
-    @Published var maxPlayers = 4
-    @Published var isPublic = true
-    @Published var ageGroup = "all"
-    
-    // Join by code
-    @Published var roomCode = ""
-    
-    private var cancellables = Set<AnyCancellable>()
     
     init(roomRepository: RoomRepositoryProtocol = RoomRepository(),
          webSocketManager: WebSocketManager = WebSocketManager.shared) {
         self.roomRepository = roomRepository
         self.webSocketManager = webSocketManager
-        
-        setupWebSocketObservers()
     }
     
     // MARK: - Room Management
     
     func loadAvailableRooms() async {
         isLoading = true
-        showError = false
+        errorMessage = nil
         
         do {
             availableRooms = try await roomRepository.getAvailableRooms()
         } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
     }
     
-    func loadMyRoom() async {
-        do {
-            myRoom = try await roomRepository.getMyRoom()
-            isInRoom = myRoom != nil
-            
-            if let room = myRoom {
-                await loadRoomDetails(roomId: room.id)
-            }
-        } catch {
-            handleError(error)
-        }
-    }
-    
-    func loadRoomDetails(roomId: Int) async {
-        do {
-            roomDetails = try await roomRepository.getRoomDetails(roomId: roomId)
-        } catch {
-            handleError(error)
-        }
-    }
-    
-    func createRoom() async {
+    func createRoom(maxPlayers: Int, isPublic: Bool, ageGroup: String?) async {
         isLoading = true
-        showError = false
+        errorMessage = nil
         
         do {
             let request = CreateRoomRequest(
                 max_players: maxPlayers,
                 is_public: isPublic,
-                generate_code: true
+                age_group: ageGroup
             )
             
-            myRoom = try await roomRepository.createRoom(request: request)
-            isInRoom = true
+            let room = try await roomRepository.createRoom(request: request)
+            currentRoom = room
             
-            // Connect to WebSocket
-            try await webSocketManager.connect(roomId: myRoom?.id)
-            
+            // Connect to WebSocket for this room
+            try await webSocketManager.connect(roomId: room.room.id)
         } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
@@ -103,174 +64,69 @@ class RoomViewModel: ObservableObject {
     
     func joinRoom(roomId: Int) async {
         isLoading = true
-        showError = false
+        errorMessage = nil
         
         do {
-            myRoom = try await roomRepository.joinRoom(roomId: roomId)
-            isInRoom = true
+            let room = try await roomRepository.joinRoom(roomId: roomId)
+            currentRoom = room
             
-            // Connect to WebSocket
+            // Connect to WebSocket for this room
             try await webSocketManager.connect(roomId: roomId)
-            
         } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
     }
     
-    func joinByCode() async {
-        guard !roomCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            showError = true
-            errorMessage = "Введите код комнаты"
-            return
-        }
-        
+    func joinRoomByCode(code: String) async {
         isLoading = true
-        showError = false
+        errorMessage = nil
         
         do {
-            let code = roomCode.trimmingCharacters(in: .whitespacesAndNewlines)
-            myRoom = try await roomRepository.joinByCode(code: code)
-            isInRoom = true
+            let request = JoinRoomRequest(room_code: code)
+            let room = try await roomRepository.joinRoomByCode(request: request)
+            currentRoom = room
             
-            // Connect to WebSocket
-            try await webSocketManager.connect(roomId: myRoom?.id)
-            
+            // Connect to WebSocket for this room
+            try await webSocketManager.connect(roomId: room.room.id)
         } catch {
-            handleError(error)
-        }
-        
-        isLoading = false
-    }
-    
-    func quickMatch() async {
-        isLoading = true
-        showError = false
-        
-        do {
-            myRoom = try await roomRepository.quickMatch()
-            isInRoom = true
-            
-            // Connect to WebSocket
-            try await webSocketManager.connect(roomId: myRoom?.id)
-            
-        } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
     }
     
     func leaveRoom() async {
-        guard let roomId = myRoom?.id else { return }
+        guard let room = currentRoom else { return }
         
         isLoading = true
-        showError = false
+        errorMessage = nil
         
         do {
-            try await roomRepository.leaveRoom(roomId: roomId)
-            webSocketManager.disconnect()
-            
-            myRoom = nil
-            roomDetails = nil
-            isInRoom = false
-            currentGame = nil
-            
+            try await roomRepository.leaveRoom(roomId: room.room.id)
+            try await webSocketManager.leaveRoom(room.room.id)
+            currentRoom = nil
         } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
     }
     
     func startGame() async {
-        guard let roomId = myRoom?.id else { return }
+        guard let room = currentRoom else { return }
         
         isLoading = true
-        showError = false
+        errorMessage = nil
         
         do {
-            currentGame = try await roomRepository.startGame(roomId: roomId)
-            
-            // Send start game message via WebSocket
-            try await webSocketManager.startGame(roomId: roomId)
-            
+            try await roomRepository.startGame(roomId: room.room.id)
+            try await webSocketManager.startGame(room.room.id)
         } catch {
-            handleError(error)
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
-    }
-    
-    // MARK: - WebSocket Observers
-    
-    private func setupWebSocketObservers() {
-        NotificationCenter.default.publisher(for: Notification.Name.roomStateChanged)
-            .sink { [weak self] notification in
-                Task { @MainActor in
-                    await self?.handleRoomStateChanged(notification)
-                }
-            }
-            .store(in: &cancellables)
-        
-        NotificationCenter.default.publisher(for: Notification.Name.gameStarted)
-            .sink { [weak self] notification in
-                Task { @MainActor in
-                    await self?.handleGameStarted(notification)
-                }
-            }
-            .store(in: &cancellables)
-        
-        NotificationCenter.default.publisher(for: Notification.Name.playerJoined)
-            .sink { [weak self] notification in
-                Task { @MainActor in
-                    await self?.handlePlayerJoined(notification)
-                }
-            }
-            .store(in: &cancellables)
-        
-        NotificationCenter.default.publisher(for: Notification.Name.playerLeft)
-            .sink { [weak self] notification in
-                Task { @MainActor in
-                    await self?.handlePlayerLeft(notification)
-                }
-            }
-            .store(in: &cancellables)
-    }
-    
-    private func handleRoomStateChanged(_ notification: Notification) async {
-        // Reload room details when room state changes
-        if let roomId = myRoom?.id {
-            await loadRoomDetails(roomId: roomId)
-        }
-    }
-    
-    private func handleGameStarted(_ notification: Notification) async {
-        // Handle game started event
-        if let roomId = myRoom?.id {
-            await loadRoomDetails(roomId: roomId)
-        }
-    }
-    
-    private func handlePlayerJoined(_ notification: Notification) async {
-        // Reload room details when player joins
-        if let roomId = myRoom?.id {
-            await loadRoomDetails(roomId: roomId)
-        }
-    }
-    
-    private func handlePlayerLeft(_ notification: Notification) async {
-        // Reload room details when player leaves
-        if let roomId = myRoom?.id {
-            await loadRoomDetails(roomId: roomId)
-        }
-    }
-    
-    // MARK: - Private Methods
-    
-    private func handleError(_ error: Error) {
-        showError = true
-        errorMessage = error.localizedDescription
     }
 } 

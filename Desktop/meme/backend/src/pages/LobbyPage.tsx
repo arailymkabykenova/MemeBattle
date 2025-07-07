@@ -39,7 +39,7 @@ export default function LobbyPage({ token, roomId, userId, onStartGame, onLeave 
   }, [onStartGame]);
 
   useWebSocket(
-    `${API_URL.replace('http', 'ws')}/ws/rooms/${roomId}?token=${token}`,
+    `${API_URL.replace('http', 'ws')}/websocket/ws?token=${token}`,
     handleWsMessage
   );
 

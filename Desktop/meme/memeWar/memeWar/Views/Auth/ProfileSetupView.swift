@@ -8,143 +8,109 @@
 import SwiftUI
 
 struct ProfileSetupView: View {
-    @EnvironmentObject var profileViewModel: ProfileViewModel
-    @EnvironmentObject var cardsViewModel: CardsViewModel
+    @EnvironmentObject var authViewModel: AuthViewModel
+    
+    @State private var nickname = ""
+    @State private var birthDate = Date()
+    @State private var selectedGender = Gender.male
+    
+    private let maxDate = Calendar.current.date(byAdding: .year, value: -13, to: Date()) ?? Date()
+    private let minDate = Calendar.current.date(byAdding: .year, value: -100, to: Date()) ?? Date()
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: AppConstants.largePadding) {
-                    // Header
-                    VStack(spacing: AppConstants.padding) {
-                        Image(systemName: "person.crop.circle.badge.plus")
-                            .font(.system(size: 60))
-                            .foregroundColor(.accentColor)
-                        
-                        Text("Завершите профиль")
-                            .font(.title)
-                            .fontWeight(.bold)
-                            .multilineTextAlignment(.center)
-                        
-                        Text("Расскажите о себе, чтобы начать играть")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.top, AppConstants.largePadding)
+            VStack(spacing: 30) {
+                VStack(spacing: 20) {
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(.blue)
                     
-                    // Form
-                    VStack(spacing: AppConstants.largePadding) {
-                        // Nickname Field
-                        VStack(alignment: .leading, spacing: AppConstants.smallPadding) {
-                            Text("Никнейм")
-                                .font(.headline)
-                                .fontWeight(.medium)
-                            
-                            TextField("Введите никнейм", text: $profileViewModel.nickname)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
-                            
-                            if let error = profileViewModel.nicknameError {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                        }
-                        
-                        // Birth Date Field
-                        VStack(alignment: .leading, spacing: AppConstants.smallPadding) {
-                            Text("Дата рождения")
-                                .font(.headline)
-                                .fontWeight(.medium)
-                            
-                            DatePicker(
-                                "Дата рождения",
-                                selection: $profileViewModel.birthDate,
-                                in: ...Date(),
-                                displayedComponents: .date
-                            )
-                            .datePickerStyle(WheelDatePickerStyle())
-                            .labelsHidden()
-                        }
-                        
-                        // Gender Field
-                        VStack(alignment: .leading, spacing: AppConstants.smallPadding) {
-                            Text("Пол")
-                                .font(.headline)
-                                .fontWeight(.medium)
-                            
-                            Picker("Пол", selection: $profileViewModel.selectedGender) {
-                                ForEach(Gender.allCases, id: \.self) { gender in
-                                    Text(gender.displayName).tag(gender)
-                                }
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                        }
-                    }
-                    .padding(.horizontal, AppConstants.largePadding)
+                    Text("Настройка профиля")
+                        .font(.title)
+                        .fontWeight(.bold)
                     
-                    Spacer()
-                    
-                    // Submit Button
-                    Button(action: {
-                        Task {
-                            await profileViewModel.completeProfile()
-                        }
-                    }) {
-                        HStack {
-                            if profileViewModel.isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "checkmark.circle.fill")
-                            }
-                            
-                            Text(profileViewModel.isLoading ? "Сохранение..." : "Завершить профиль")
-                                .fontWeight(.medium)
-                        }
+                    Text("Расскажите о себе")
                         .font(.body)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, AppConstants.padding)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppConstants.cornerRadius)
-                                .fill(isFormValid ? Color.accentColor : Color.gray)
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Никнейм")
+                            .font(.headline)
+                        
+                        TextField("Введите никнейм", text: $nickname)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Дата рождения")
+                            .font(.headline)
+                        
+                        DatePicker("Дата рождения", selection: $birthDate, in: minDate...maxDate, displayedComponents: .date)
+                            .datePickerStyle(WheelDatePickerStyle())
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Пол")
+                            .font(.headline)
+                        
+                        Picker("Пол", selection: $selectedGender) {
+                            ForEach(Gender.allCases, id: \.self) { gender in
+                                Text(genderDisplayName(gender)).tag(gender)
+                            }
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
+                    }
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    Task {
+                        await authViewModel.completeProfile(
+                            nickname: nickname,
+                            birthDate: birthDate,
+                            gender: selectedGender
                         )
                     }
-                    .disabled(!isFormValid || profileViewModel.isLoading)
-                    .padding(.horizontal, AppConstants.largePadding)
-                    
-                    // Error Message
-                    if profileViewModel.showError {
-                        Text(profileViewModel.errorMessage ?? "Произошла ошибка")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, AppConstants.largePadding)
+                }) {
+                    HStack {
+                        if authViewModel.isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "checkmark")
+                        }
+                        Text("Сохранить профиль")
                     }
-                    
-                    Spacer(minLength: 100)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
+                .disabled(nickname.isEmpty || authViewModel.isLoading)
             }
+            .padding()
             .navigationBarHidden(true)
-            .onAppear {
-                Task {
-                    await profileViewModel.checkProfileStatus()
-                }
-            }
         }
     }
     
-    private var isFormValid: Bool {
-        profileViewModel.isFormValid
+    private func genderDisplayName(_ gender: Gender) -> String {
+        switch gender {
+        case .male:
+            return "Мужской"
+        case .female:
+            return "Женский"
+        case .other:
+            return "Другой"
+        }
     }
 }
 
 #Preview {
     ProfileSetupView()
-        .environmentObject(ProfileViewModel())
-        .environmentObject(CardsViewModel())
+        .environmentObject(AuthViewModel())
 } 

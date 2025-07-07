@@ -7,7 +7,7 @@
 
 import Foundation
 
-// MARK: - Room Status Enum
+// MARK: - Room Models
 
 enum RoomStatus: String, Codable {
     case waiting = "waiting"
@@ -37,8 +37,6 @@ enum RoomStatus: String, Codable {
     }
 }
 
-// MARK: - Room Response
-
 struct RoomResponse: Codable, Identifiable {
     let id: Int
     let creator_id: Int
@@ -52,16 +50,12 @@ struct RoomResponse: Codable, Identifiable {
     let creator_nickname: String?
 }
 
-// MARK: - Room Detail Response
-
 struct RoomDetailResponse: Codable {
     let room: RoomResponse
     let participants: [RoomParticipantResponse]
     let creator_nickname: String
     let can_start_game: Bool
 }
-
-// MARK: - Room Participant Response
 
 struct RoomParticipantResponse: Codable, Identifiable {
     let id: Int
@@ -72,32 +66,21 @@ struct RoomParticipantResponse: Codable, Identifiable {
     let status: String
 }
 
-// MARK: - Create Room Request
-
 struct CreateRoomRequest: Codable {
     let max_players: Int
     let is_public: Bool
-    let generate_code: Bool
+    let age_group: String?
 }
 
-// MARK: - Join Room By Code Request
-
-struct JoinRoomByCodeRequest: Codable {
+struct JoinRoomRequest: Codable {
     let room_code: String
 }
 
-// MARK: - Quick Match Request
-
-struct QuickMatchRequest: Codable {
-    let preferred_players: Int
-    let max_wait_time: Int
-}
-
-// MARK: - Quick Match Response
-
-struct QuickMatchResponse: Codable {
-    let room: RoomResponse
-    let wait_time: Int
+struct RoomStatsResponse: Codable {
+    let total_rooms: Int
+    let active_rooms: Int
+    let total_players: Int
+    let average_players_per_room: Double
 }
 
 // MARK: - Room Creation
@@ -109,10 +92,6 @@ struct CreateRoomResponse: Codable {
 }
 
 // MARK: - Room Joining
-
-struct JoinRoomRequest: Codable {
-    let room_id: Int
-}
 
 struct JoinRoomResponse: Codable {
     let room: RoomDetailResponse
