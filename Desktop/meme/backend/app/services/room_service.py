@@ -71,17 +71,10 @@ class RoomService:
         if not user.is_profile_complete:
             raise ValidationError("Для создания комнаты необходимо заполнить профиль (никнейм, дата рождения, пол)")
         
-        # Проверяем что у пользователя нет активной комнаты
-        existing_room = await self.db.execute(
-            select(Room).where(
-                and_(
-                    Room.creator_id == creator_id,
-                    Room.status.in_([RoomStatus.WAITING, RoomStatus.PLAYING])
-                )
-            )
-        )
-        if existing_room.scalar():
-            raise ValidationError("У вас уже есть активная игровая комната")
+        # 🔒 ПРОВЕРЯЕМ ЧТО ПОЛЬЗОВАТЕЛЬ НЕ В ДРУГОЙ КОМНАТЕ
+        current_room = await self.get_user_current_room(creator_id)
+        if current_room:
+            raise ValidationError(f"Сначала покиньте текущую комнату {current_room.id}")
         
         # Генерируем уникальный код если запрошен
         room_code = None
@@ -148,6 +141,11 @@ class RoomService:
         if not user or not user.is_profile_complete:
             raise ValidationError("Для присоединения к комнате необходимо заполнить профиль (никнейм, дата рождения, пол)")
         
+        # 🔒 ПРОВЕРЯЕМ ЧТО ПОЛЬЗОВАТЕЛЬ НЕ В ДРУГОЙ КОМНАТЕ
+        current_room = await self.get_user_current_room(user_id)
+        if current_room:
+            raise ValidationError(f"Сначала покиньте текущую комнату {current_room.id}")
+        
         # Получаем комнату
         room = await self._get_room_or_404(room_id)
         
@@ -195,6 +193,11 @@ class RoomService:
         user = await self.db.get(User, user_id)
         if not user or not user.is_profile_complete:
             raise ValidationError("Для присоединения к комнате необходимо заполнить профиль (никнейм, дата рождения, пол)")
+        
+        # 🔒 ПРОВЕРЯЕМ ЧТО ПОЛЬЗОВАТЕЛЬ НЕ В ДРУГОЙ КОМНАТЕ
+        current_room = await self.get_user_current_room(user_id)
+        if current_room:
+            raise ValidationError(f"Сначала покиньте текущую комнату {current_room.id}")
         
         # Находим комнату по коду
         room_result = await self.db.execute(
@@ -554,9 +557,28 @@ class RoomService:
         all_results = participant_result.fetchall()
         print(f"🔍 DEBUG: All results for user {user_id}: {all_results}")
         
-        # Если есть результаты, берем первый
-        room_id = all_results[0][0] if all_results else None
-        print(f"🔍 DEBUG: Found room_id {room_id} for user {user_id}")
+        # 🔒 ПРОВЕРЯЕМ ЧТО ПОЛЬЗОВАТЕЛЬ НЕ В НЕСКОЛЬКИХ КОМНАТАХ ОДНОВРЕМЕННО
+        if len(all_results) > 1:
+            print(f"⚠️ WARNING: User {user_id} is in multiple rooms: {[r[0] for r in all_results]}")
+            # Автоматически покидаем все комнаты кроме первой (самой старой)
+            room_ids = [r[0] for r in all_results]
+            oldest_room_id = room_ids[0]  # Берем самую старую комнату
+            
+            for room_id in room_ids[1:]:  # Покидаем все остальные
+                print(f"🔧 AUTO-LEAVING: User {user_id} leaving room {room_id}")
+                try:
+                    await self.leave_room(room_id, user_id)
+                except Exception as e:
+                    print(f"❌ Error auto-leaving room {room_id}: {e}")
+            
+            # Возвращаем самую старую комнату
+            room_id = oldest_room_id
+        elif len(all_results) == 1:
+            room_id = all_results[0][0]
+        else:
+            room_id = None
+            
+        print(f"🔍 DEBUG: Final room_id {room_id} for user {user_id}")
         
         if room_id:
             print(f"🔍 DEBUG: Getting room details for room {room_id}")
